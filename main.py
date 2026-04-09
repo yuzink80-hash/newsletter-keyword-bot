@@ -18,100 +18,68 @@ def expand_keywords_bulk(seeds):
     if not seeds:
         print("⚠️ 시드 키워드가 없어 확장을 중단합니다.")
         return []
-        
     base_url = "https://api.searchad.naver.com"
     uri = "/keywordstool"
     method = "GET"
-    
-    # 최대 5개 키워드 추출
     sample_seeds = [seeds.pop(0) for _ in range(min(5, len(seeds)))]
     hint_str = ",".join(sample_seeds).replace(" ", "")
-    print(f"🔎 네이버 API 호출 (힌트 키워드: {hint_str})")
+    print(f"🔎 네이버 API 호출 시도 (힌트: {hint_str})")
     
     timestamp = str(round(time.time() * 1000))
     message = timestamp + "." + method + "." + uri
     
     try:
+        # Secret Key가 비어있는지 확인
+        if not AD_SECRET_KEY:
+            print("🚨 에러: AD_SECRET_KEY가 설정되지 않았습니다. GitHub Secrets를 확인하세요.")
+            return []
+            
         hash_obj = hmac.new(bytes(AD_SECRET_KEY, "utf-8"), bytes(message, "utf-8"), hashlib.sha256)
         signature = base64.b64encode(hash_obj.digest()).decode("utf-8")
-        
-        headers = {
-            "X-Timestamp": timestamp, 
-            "X-API-KEY": AD_API_KEY, 
-            "X-Customer": str(AD_CUSTOMER_ID), 
-            "X-Signature": signature
-        }
+        headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_API_KEY, "X-Customer": str(AD_CUSTOMER_ID), "X-Signature": signature}
         params = {"hintKeywords": hint_str, "showDetail": 1}
-        
         response = requests.get(base_url + uri, params=params, headers=headers)
         
-        expanded_list = list()
         if response.status_code == 200:
-            data = response.json()
-            raw_list = data.get('keywordList', list())
-            print(f"✅ 네이버로부터 {len(raw_list)}개의 연관 키워드를 가져왔습니다.")
-            for item in raw_list:
-                pc = int(item.get('monthlyPcQcCnt', 0)) if str(item.get('monthlyPcQcCnt')).isdigit() else 10
-                mo = int(item.get('monthlyMobileQcCnt', 0)) if str(item.get('monthlyMobileQcCnt')).isdigit() else 10
-                expanded_list.append({"keyword": item.get('relKeyword'), "volume": pc + mo})
+            raw_list = response.json().get('keywordList', [])
+            print(f"✅ 연관 키워드 {len(raw_list)}개 수집 성공!")
+            return [{"keyword": i.get('relKeyword'), "volume": (int(i.get('monthlyPcQcCnt', 0)) if str(i.get('monthlyPcQcCnt')).isdigit() else 10) + (int(i.get('monthlyMobileQcCnt', 0)) if str(i.get('monthlyMobileQcCnt')).isdigit() else 10)} for i in raw_list]
         else:
-            print(f"❌ 네이버 API 호출 실패 (상태 코드: {response.status_code})")
-            print(f"응답 내용: {response.text}")
-            
-        return expanded_list
+            print(f"❌ 네이버 API 호출 실패 (코드: {response.status_code})")
+            print(f"응답 메시지: {response.text}")
+            return []
     except Exception as e:
-        print(f"🚨 API 호출 중 오류 발생: {e}")
+        print(f"🚨 시스템 에러: {e}")
         return []
 
 def get_document_count(keyword):
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {"X-Naver-Client-Id": OPEN_CLIENT_ID, "X-Naver-Client-Secret": OPEN_CLIENT_SECRET}
-    params = {"query": keyword, "display": 1}
     try:
-        response = requests.get(url, params=params, headers=headers)
-        return response.json().get('total', 0) if response.status_code == 200 else 0
-    except:
-        return 0
+        res = requests.get(url, params={"query": keyword, "display": 1}, headers=headers)
+        return res.json().get('total', 0) if res.status_code == 200 else 0
+    except: return 0
 
 if __name__ == "__main__":
-    print("🚀 실시간 트렌드 분석기 가동...")
-    
-    # 구글 트렌드 수집
-    url = "https://trends.google.com/trending/rss?geo=KR"
-    seeds = list()
-    try:
-        res = requests.get(url)
-        if res.status_code == 200:
-            root = ET.fromstring(res.content)
-            for item in root.findall('.//item'):
-                seeds.append(item.find('title').text)
-            print(f"📈 구글 트렌드에서 {len(seeds)}개의 시드 키워드를 발견했습니다.")
-    except Exception as e:
-        print(f"🚨 구글 트렌드 수집 실패: {e}")
+    print("🚀 분석 시작...")
+    res = requests.get("https://trends.google.com/trending/rss?geo=KR")
+    seeds = [item.find('title').text for item in ET.fromstring(res.content).findall('.//item')] if res.status_code == 200 else []
+    print(f"📈 구글 트렌드 키워드 {len(seeds)}개 발견")
 
-    # 키워드 확장
     raw_keywords = expand_keywords_bulk(seeds)
-    
     if not raw_keywords:
-        print("⚠️ 수집된 데이터가 없어 분석을 종료합니다. API 설정을 확인해주세요.")
+        print("⚠️ 수집된 데이터가 없습니다. API 키 설정이나 권한을 확인해주세요.")
     else:
-        df_raw = pd.DataFrame(raw_keywords)
-        
-        # 'volume' 컬럼이 있는지 확인 후 진행
-        if 'volume' in df_raw.columns:
-            df_top100 = df_raw.sort_values(by="volume", ascending=False).head(100)
-
-            final_results = list()
-            for item in df_top100.to_dict('records'):
-                kw, vol = item['keyword'], item['volume']
-                doc = get_document_count(kw)
-                comp = round(doc / vol, 2) if vol > 0 else 0
-                final_results.append({"키워드": kw, "검색량": vol, "문서수": doc, "경쟁강도": comp})
+        df = pd.DataFrame(raw_keywords)
+        if 'volume' in df.columns:
+            top = df.sort_values(by="volume", ascending=False).head(100)
+            final = []
+            for item in top.to_dict('records'):
+                doc = get_document_count(item['keyword'])
+                vol = item['volume']
+                final.append({"키워드": item['keyword'], "검색량": vol, "문서수": doc, "경쟁강도": round(doc/vol, 2) if vol > 0 else 0})
                 time.sleep(0.1)
-
-            df_final = pd.DataFrame(final_results)
-            df_sorted = df_final.sort_values(by=["경쟁강도", "검색량"], ascending=[True, False])
-            df_sorted.to_csv("daily_golden_keywords.csv", index=False, encoding="utf-8-sig")
-            print("✅ 분석 완료! daily_golden_keywords.csv 파일이 생성되었습니다.")
+            pd.DataFrame(final).sort_values(by=["경쟁강도", "검색량"], ascending=[True, False]).to_csv("daily_golden_keywords.csv", index=False, encoding="utf-8-sig")
+            print("✅ daily_golden_keywords.csv 생성 완료!")
         else:
-            print("🚨 데이터 구조 오류: 'volume' 정보를 찾을 수 없습니다.")
+            print("🚨 데이터에 'volume' 정보가 없습니다.")
