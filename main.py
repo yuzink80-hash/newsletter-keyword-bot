@@ -4,11 +4,11 @@ import xml.etree.ElementTree as ET
 
 # 1. API 키 설정 (환경 변수)
 keys = {
-    "AD_API": os.environ.get("01000000000c940f8019a6d420411b1103413f766b201bcb73aa7f4042913af21f433b8156", ""),
-    "AD_SEC": os.environ.get("AQAAAAAMlA+AGabUIEEbEQNBP3ZrNQLWfCqgpo5peoORAozOxg==", ""),
-    "AD_CUS": os.environ.get("4348120", ""),
-    "ID": os.environ.get("P5roEfkWrGN1EJ85ifkh", ""),
-    "SEC": os.environ.get("GFGZuG1x12", "")
+    "AD_API": os.environ.get("01000000000c940f8019a6d420411b1103413f766b201bcb73aa7f4042913af21f433b8156"),
+    "AD_SEC": os.environ.get("AQAAAAAMlA+AGabUIEEbEQNBP3ZrNQLWfCqgpo5peoORAozOxg=="),
+    "AD_CUS": os.environ.get("4348120"),
+    "ID": os.environ.get("P5roEfkWrGN1EJ85ifkh"),
+    "SEC": os.environ.get("GFGZuG1x12")
 }
 
 def get_google_trends():
