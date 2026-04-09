@@ -7,12 +7,13 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import os
 
-# 1. 시스템 환경 변수 (GitHub Secrets) 불러오기
-AD_API_KEY = os.environ.get("0100000000da393051bc0ad52c63ef41b601b7fcce544c88645d22f4c40cd79d77e8e0d097").strip()
-AD_SECRET_KEY = os.environ.get("AQAAAADHv6i7xheOLlXkWUe0dEuS+BOXWrp8ukJA7MPaYdqUXw==").strip()
-AD_CUSTOMER_ID = os.environ.get("4348120").strip()
-OPEN_CLIENT_ID = os.environ.get("P5roEfkWrGN1EJ85ifkh").strip()
-OPEN_CLIENT_SECRET = os.environ.get("GFGZuG1x12").strip()
+# 1. 시스템 환경 변수 (GitHub Secrets) '이름표'를 불러오는 곳입니다.
+# 진짜 값은 깃허브 Settings -> Secrets에 저장되어 있으니 여기엔 이름만 적으세요!
+AD_API_KEY = os.environ.get("0100000000da393051bc0ad52c63ef41b601b7fcce544c88645d22f4c40cd79d77e8e0d097", "").strip()
+AD_SECRET_KEY = os.environ.get("AQAAAADHv6i7xheOLlXkWUe0dEuS+BOXWrp8ukJA7MPaYdqUXw==", "").strip()
+AD_CUSTOMER_ID = os.environ.get("4348120", "").strip()
+OPEN_CLIENT_ID = os.environ.get("P5roEfkWrGN1EJ85ifkh", "").strip()
+OPEN_CLIENT_SECRET = os.environ.get("GFGZuG1x12", "").strip()
 
 def get_google_trends():
     """오늘의 구글 실시간 트렌드 키워드 수집"""
