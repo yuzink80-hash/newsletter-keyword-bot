@@ -11,31 +11,33 @@ import streamlit as st
 st.set_page_config(page_title="황금키워드 분석기", page_icon="📈", layout="wide")
 
 # ==========================================
+# 🧠 세션 상태 (기억 상자) 초기화
+# ==========================================
+# 클릭한 키워드를 검색창에 자동으로 넣고 실행하기 위한 저장소입니다.
+if 'current_search' not in st.session_state:
+    st.session_state.current_search = ""
+if 'auto_run' not in st.session_state:
+    st.session_state.auto_run = False
+
+# ==========================================
 # 🎨 커스텀 CSS (화면 디자인 꾸미기)
 # ==========================================
 st.markdown("""
 <style>
-    /* 입력창 주변에 은은한 네온 민트색 빛 번짐 효과 */
     div[data-baseweb="input"] > div {
         background-color: #ffffff !important;
         border-radius: 8px;
         box-shadow: 0 0 15px rgba(0, 255, 150, 0.2);
         border: 1px solid rgba(0, 255, 150, 0.4);
     }
-    
-    /* 🌟 [수정된 부분] 입력창 안의 텍스트 색상 강제 지정 */
     div[data-baseweb="input"] input {
-        color: #1E1E1E !important; /* 사용자가 치는 글씨는 아주 진한 흑회색으로 */
+        color: #1E1E1E !important;
         -webkit-text-fill-color: #1E1E1E !important;
     }
-    
-    /* 🌟 [수정된 부분] 안내 문구(Placeholder) 색상 강제 지정 */
     div[data-baseweb="input"] input::placeholder {
-        color: #A0A0A0 !important; /* 안내 문구는 적당한 회색으로 */
+        color: #A0A0A0 !important;
         -webkit-text-fill-color: #A0A0A0 !important;
     }
-    
-    /* 해시태그 디자인 */
     .trend-tag {
         display: inline-block;
         padding: 6px 12px;
@@ -52,8 +54,6 @@ st.markdown("""
         color: #000000;
         cursor: pointer;
     }
-    
-    /* 상단 안내 문구 폰트 색상 */
     .sub-title {
         color: #00FF96;
         font-size: 1.1em;
@@ -61,7 +61,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # ==========================================
 # ⚙️ 백엔드 로직 (데이터 수집 엔진)
@@ -128,7 +127,6 @@ def get_blog_doc_count(keyword):
         pass
     return 0
 
-
 # ==========================================
 # 🖥️ 프론트엔드 UI (화면 그리기)
 # ==========================================
@@ -139,17 +137,36 @@ col1, col2 = st.columns([1, 6])
 with col1:
     search_engine = st.selectbox("엔진", ["NAVER", "GOOGLE"], label_visibility="collapsed")
 with col2:
-    user_keyword = st.text_input("검색어", placeholder="분석할 키워드를 입력하세요 (예: 테슬라, 미국주식)", label_visibility="collapsed")
+    # 직접 입력했을 때 세션 업데이트
+    def update_search():
+        st.session_state.current_search = st.session_state.search_input_widget
+        st.session_state.auto_run = False
+        
+    user_keyword = st.text_input(
+        "검색어", 
+        value=st.session_state.current_search,
+        key="search_input_widget",
+        placeholder="분석할 키워드를 입력하세요 (예: 테슬라, 미국주식)", 
+        label_visibility="collapsed",
+        on_change=update_search
+    )
 
 current_trends = get_google_trends()
 if current_trends:
     tags_html = "".join([f'<span class="trend-tag">#{kw}</span>' for kw in current_trends[:6]])
     st.markdown(tags_html + '<span class="trend-tag" style="background:none; color:#00FF96;">트렌드 더 보기 →</span>', unsafe_allow_html=True)
 
-if st.button("분석 시작하기", type="primary", use_container_width=True):
+# 버튼 클릭 또는 표 클릭 시 자동 실행
+is_clicked = st.button("분석 시작하기", type="primary", use_container_width=True)
+
+if is_clicked or st.session_state.auto_run:
+    st.session_state.auto_run = False # 무한 반복 방지
+    
     seeds = []
-    if user_keyword.strip():
-        seeds = [k.strip() for k in user_keyword.split(",") if k.strip()]
+    actual_keyword = st.session_state.current_search
+    
+    if actual_keyword.strip():
+        seeds = [k.strip() for k in actual_keyword.split(",") if k.strip()]
     else:
         seeds = current_trends
         
@@ -173,10 +190,31 @@ if st.button("분석 시작하기", type="primary", use_container_width=True):
                 my_bar.progress((idx + 1) / total_items, text="블로그 문서 수 수집 중...")
             
             df_final = pd.DataFrame(final_results)
-            df_sorted = df_final.sort_values(by=["경쟁강도", "월간검색량"], ascending=[True, False])
+            # 인덱스를 깔끔하게 정리 (클릭 인식 오류 방지)
+            df_sorted = df_final.sort_values(by=["경쟁강도", "월간검색량"], ascending=[True, False]).reset_index(drop=True)
             
             st.subheader(f"✨ 분석 완료! (총 {len(df_sorted)}개)")
-            st.dataframe(df_sorted, use_container_width=True)
+            st.caption("👇 표에서 파고들고 싶은 키워드 행을 **마우스로 클릭**해 보세요. 즉시 꼬리물기 분석이 시작됩니다!")
+            
+            # 🌟 [핵심 업데이트] 클릭 가능한 상호작용형 데이터프레임
+            event = st.dataframe(
+                df_sorted, 
+                use_container_width=True,
+                on_select="rerun",           # 선택 시 화면 다시 그리기
+                selection_mode="single-row"  # 한 줄씩 선택 가능
+            )
+            
+            # 표에서 클릭이 발생했다면
+            if len(event.selection.rows) > 0:
+                selected_idx = event.selection.rows[0]
+                clicked_kw = df_sorted.iloc[selected_idx]['키워드']
+                
+                # 방금 검색한 단어와 다르다면 즉시 꼬리물기 재실행
+                if clicked_kw != st.session_state.current_search:
+                    st.session_state.current_search = clicked_kw
+                    st.session_state.auto_run = True
+                    st.rerun()
+                    
         else:
             st.warning("분석할 데이터를 찾지 못했습니다.")
     else:
