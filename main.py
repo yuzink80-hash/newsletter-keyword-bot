@@ -20,7 +20,7 @@ if 'auto_run' not in st.session_state:
     st.session_state.auto_run = False
 
 # ==========================================
-# 🎨 커스텀 CSS (레이아웃 완벽 유지)
+# 🎨 커스텀 CSS (기존 레이아웃 100% 유지!)
 # ==========================================
 st.markdown("""
 <style>
@@ -88,7 +88,6 @@ def get_google_trends():
         pass
     return []
 
-# 🌟 [신규 추가] 네이버 데이터랩 1년 트렌드 가져오기
 def get_datalab_trend(keyword):
     url = "https://openapi.naver.com/v1/datalab/search"
     headers = {
@@ -97,14 +96,13 @@ def get_datalab_trend(keyword):
         "Content-Type": "application/json"
     }
     
-    # 1년 전부터 오늘까지 설정
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
     
     body = {
         "startDate": start_date.strftime("%Y-%m-%d"),
         "endDate": end_date.strftime("%Y-%m-%d"),
-        "timeUnit": "month",
+        "timeUnit": "date",  # 🌟 일간 데이터로 쪼개서 가져옵니다.
         "keywordGroups": [{"groupName": keyword, "keywords": [keyword]}]
     }
     
@@ -115,10 +113,9 @@ def get_datalab_trend(keyword):
             if data.get('results') and data['results'][0].get('data'):
                 df = pd.DataFrame(data['results'][0]['data'])
                 df.rename(columns={'period': '날짜', 'ratio': '관심도'}, inplace=True)
+                df['날짜'] = pd.to_datetime(df['날짜'])
                 df.set_index('날짜', inplace=True)
                 return df
-        else:
-            st.error(f"⚠️ 네이버 개발자 센터에서 '데이터랩(검색어트렌드)' API 권한을 추가해주세요! (에러코드: {res.status_code})")
     except Exception as e:
         pass
     return None
@@ -181,7 +178,7 @@ with col2:
         "검색어", 
         value=st.session_state.current_search,
         key="search_input_widget",
-        placeholder="분석할 키워드를 입력하세요 (예: 문래창작촌, 역사)", 
+        placeholder="분석할 키워드를 입력하세요 (예: 문래창작촌, 영등포 로컬)", 
         label_visibility="collapsed",
         on_change=update_search
     )
@@ -205,14 +202,34 @@ if is_clicked or st.session_state.auto_run:
         seeds = current_trends
         
     if seeds:
-        # 🌟 1. 데이터랩 트렌드 그래프 그리기
         trend_df = get_datalab_trend(seeds[0])
         if trend_df is not None:
+            # 1. 1년 트렌드 꺾은선 그래프
             st.markdown(f"#### 📈 '{seeds[0]}' 최근 1년 검색 트렌드")
-            st.line_chart(trend_df, color="#00FF96") # 유진님 툴의 시그니처 네온 민트색 적용!
-            st.divider() # 그래프와 표 사이에 깔끔한 줄 긋기
+            monthly_trend = trend_df.groupby(trend_df.index.to_period('M')).mean()
+            monthly_trend.index = monthly_trend.index.to_timestamp()
+            st.line_chart(monthly_trend, color="#00FF96")
             
-        # 🌟 2. 기존 연관 검색어 표 로직
+            # 🌟 2. [추가된 부분] 월별 / 요일별 막대 그래프 나란히 배치
+            col_chart1, col_chart2 = st.columns(2)
+            
+            with col_chart1:
+                st.markdown("##### 📅 월별 검색 비율 (%)")
+                month_group = trend_df.groupby(trend_df.index.month).mean()
+                month_group.index = [f"{m}월" for m in month_group.index]
+                month_ratio = (month_group / month_group.sum()) * 100
+                st.bar_chart(month_ratio, color="#60A5FA") # 블랙키위 스타일 하늘색
+                
+            with col_chart2:
+                st.markdown("##### 📆 요일별 검색 비율 (%)")
+                dow_group = trend_df.groupby(trend_df.index.dayofweek).mean()
+                dow_map = {0:"월", 1:"화", 2:"수", 3:"목", 4:"금", 5:"토", 6:"일"}
+                dow_group.index = [dow_map[d] for d in dow_group.index]
+                dow_ratio = (dow_group / dow_group.sum()) * 100
+                st.bar_chart(dow_ratio, color="#60A5FA") # 블랙키위 스타일 하늘색
+                
+            st.divider() 
+            
         with st.spinner("네이버 연관 검색어와 경쟁 강도를 분석 중입니다..."):
             raw_keywords = get_naver_rel_keywords(seeds)
         
