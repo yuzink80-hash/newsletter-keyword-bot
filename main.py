@@ -73,8 +73,8 @@ except KeyError:
     st.error("오른쪽 아래 Manage app -> Settings -> Secrets에 네이버 API 키를 먼저 넣어주세요!")
     st.stop()
 
-OPEN_CLIENT_ID = "P5roEfkWrGN1EJ85ifkh"
-OPEN_CLIENT_SECRET = "GFGZuG1x12"
+OPEN_CLIENT_ID = "4tiCLrc6U1v5t2cv7nB4"
+OPEN_CLIENT_SECRET = "7XFQvF5II7"
 
 @st.cache_data(ttl=600)
 def get_google_trends():
