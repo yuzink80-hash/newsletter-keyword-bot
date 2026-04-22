@@ -1,2 +1,6 @@
-requests
+streamlit
 pandas
+requests
+sqlalchemy>=2.0.0
+asyncpg
+greenlet
