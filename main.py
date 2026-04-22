@@ -7,43 +7,72 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import streamlit as st
 
-# 0. 화면 설정
-st.set_page_config(page_title="황금키워드 데이터랩", page_icon="📈", layout="wide")
+# 0. 스트림릿 화면 설정
+st.set_page_config(page_title="황금키워드 분석기", page_icon="📈", layout="wide")
 
-# 🧠 기억 상자 (세션 상태) 초기화
-if 'current_search' not in st.session_state:
-    st.session_state.current_search = ""
-if 'search_history' not in st.session_state:
-    st.session_state.search_history = []
-if 'auto_run' not in st.session_state:
-    st.session_state.auto_run = False
-
-# 🎨 디자인 (민트 네온 효과)
+# ==========================================
+# 🎨 커스텀 CSS (화면 디자인 꾸미기)
+# ==========================================
 st.markdown("""
 <style>
+    /* 입력창 주변에 은은한 네온 민트색 빛 번짐 효과 */
     div[data-baseweb="input"] > div {
-        background-color: #ffffff !important; border-radius: 8px;
+        background-color: #ffffff !important;
+        border-radius: 8px;
         box-shadow: 0 0 15px rgba(0, 255, 150, 0.2);
         border: 1px solid rgba(0, 255, 150, 0.4);
     }
-    div[data-baseweb="input"] input { color: #1E1E1E !important; -webkit-text-fill-color: #1E1E1E !important; }
-    div[data-baseweb="input"] input::placeholder { color: #A0A0A0 !important; }
-    .trend-tag {
-        display: inline-block; padding: 6px 12px; margin: 5px 8px;
-        border-radius: 20px; background-color: #1E1E1E; color: #E0E0E0;
-        font-size: 0.85em; transition: all 0.3s;
+    
+    /* 🌟 [수정된 부분] 입력창 안의 텍스트 색상 강제 지정 */
+    div[data-baseweb="input"] input {
+        color: #1E1E1E !important; /* 사용자가 치는 글씨는 아주 진한 흑회색으로 */
+        -webkit-text-fill-color: #1E1E1E !important;
     }
-    .breadcrumb { color: #00FF96; font-size: 0.9em; margin-bottom: 10px; }
+    
+    /* 🌟 [수정된 부분] 안내 문구(Placeholder) 색상 강제 지정 */
+    div[data-baseweb="input"] input::placeholder {
+        color: #A0A0A0 !important; /* 안내 문구는 적당한 회색으로 */
+        -webkit-text-fill-color: #A0A0A0 !important;
+    }
+    
+    /* 해시태그 디자인 */
+    .trend-tag {
+        display: inline-block;
+        padding: 6px 12px;
+        margin: 5px 8px 15px 0;
+        border-radius: 20px;
+        background-color: #1E1E1E;
+        color: #E0E0E0;
+        font-size: 0.85em;
+        font-weight: 500;
+        transition: all 0.3s;
+    }
+    .trend-tag:hover {
+        background-color: #00FF96;
+        color: #000000;
+        cursor: pointer;
+    }
+    
+    /* 상단 안내 문구 폰트 색상 */
+    .sub-title {
+        color: #00FF96;
+        font-size: 1.1em;
+        margin-bottom: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- [API 로직 생략: 이전과 동일] ---
+
+# ==========================================
+# ⚙️ 백엔드 로직 (데이터 수집 엔진)
+# ==========================================
 try:
     AD_API_KEY = st.secrets["NAVER_AD_ACCESS_LICENSE"]
     AD_SECRET_KEY = st.secrets["NAVER_AD_SECRET_KEY"]
     AD_CUSTOMER_ID = str(st.secrets["NAVER_AD_CUSTOMER_ID"])
-except:
-    st.error("Secrets 설정을 확인해주세요."); st.stop()
+except KeyError:
+    st.error("오른쪽 아래 Manage app -> Settings -> Secrets에 네이버 API 키를 먼저 넣어주세요!")
+    st.stop()
 
 OPEN_CLIENT_ID = "P5roEfkWrGN1EJ85ifkh"
 OPEN_CLIENT_SECRET = "GFGZuG1x12"
@@ -53,67 +82,102 @@ def get_google_trends():
     url = "https://trends.google.com/trending/rss?geo=KR"
     try:
         res = requests.get(url, timeout=10)
-        root = ET.fromstring(res.content)
-        return [item.find('title').text for item in root.findall('.//item')]
-    except: return []
-
-def get_naver_rel_keywords(seeds):
-    hint_str = ",".join(seeds[:5]).replace(" ", "")
-    timestamp = str(round(time.time() * 1000))
-    message = timestamp + ".GET./keywordstool"
-    hash_obj = hmac.new(bytes(AD_SECRET_KEY, "utf-8"), bytes(message, "utf-8"), hashlib.sha256)
-    signature = base64.b64encode(hash_obj.digest()).decode("utf-8")
-    headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_API_KEY, "X-Customer": AD_CUSTOMER_ID, "X-Signature": signature}
-    res = requests.get("https://api.searchad.naver.com/keywordstool", params={"hintKeywords": hint_str, "showDetail": 1}, headers=headers)
-    if res.status_code == 200:
-        return [{"keyword": i['relKeyword'], "volume": int(i.get('monthlyPcQcCnt', 10))+int(i.get('monthlyMobileQcCnt', 10))} for i in res.json().get('keywordList', [])]
+        if res.status_code == 200:
+            root = ET.fromstring(res.content)
+            return [item.find('title').text for item in root.findall('.//item')]
+    except:
+        pass
     return []
 
-def get_blog_doc_count(kw):
+def get_naver_rel_keywords(seeds):
+    if not seeds:
+        return []
+    hint_str = ",".join(seeds[:5]).replace(" ", "")
+    base_url = "https://api.searchad.naver.com"
+    uri = "/keywordstool"
+    timestamp = str(round(time.time() * 1000))
+    message = timestamp + ".GET." + uri
+    try:
+        hash_obj = hmac.new(bytes(AD_SECRET_KEY, "utf-8"), bytes(message, "utf-8"), hashlib.sha256)
+        signature = base64.b64encode(hash_obj.digest()).decode("utf-8")
+        headers = {
+            "X-Timestamp": timestamp, "X-API-KEY": AD_API_KEY, 
+            "X-Customer": AD_CUSTOMER_ID, "X-Signature": signature
+        }
+        res = requests.get(base_url + uri, params={"hintKeywords": hint_str, "showDetail": 1}, headers=headers)
+        if res.status_code == 200:
+            raw_list = res.json().get('keywordList', [])
+            result = []
+            for item in raw_list:
+                pc = int(item.get('monthlyPcQcCnt', 0)) if str(item.get('monthlyPcQcCnt')).isdigit() else 10
+                mo = int(item.get('monthlyMobileQcCnt', 0)) if str(item.get('monthlyMobileQcCnt')).isdigit() else 10
+                result.append({"keyword": item.get('relKeyword'), "volume": pc + mo})
+            return result
+    except:
+        pass
+    return []
+
+def get_blog_doc_count(keyword):
+    url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {"X-Naver-Client-Id": OPEN_CLIENT_ID, "X-Naver-Client-Secret": OPEN_CLIENT_SECRET}
-    res = requests.get("https://openapi.naver.com/v1/search/blog.json", params={"query": kw, "display": 1}, headers=headers)
-    return res.json().get('total', 0) if res.status_code == 200 else 0
+    try:
+        res = requests.get(url, params={"query": keyword, "display": 1}, headers=headers)
+        if res.status_code == 200:
+            return res.json().get('total', 0)
+    except:
+        pass
+    return 0
 
-# --- [UI 메인 창] ---
+
+# ==========================================
+# 🖥️ 프론트엔드 UI (화면 그리기)
+# ==========================================
 st.title("🚀 황금키워드 데이터랩")
+st.markdown('<p class="sub-title">키워드 데이터 분석을 통해 콘텐츠의 유입률을 늘리고, 비즈니스를 확장시켜보세요.</p>', unsafe_allow_html=True)
 
-# 탐색 경로 표시
-if st.session_state.search_history:
-    st.markdown(f'<div class="breadcrumb">탐색 경로: {" > ".join(st.session_state.search_history[-5:])}</div>', unsafe_allow_html=True)
+col1, col2 = st.columns([1, 6])
+with col1:
+    search_engine = st.selectbox("엔진", ["NAVER", "GOOGLE"], label_visibility="collapsed")
+with col2:
+    user_keyword = st.text_input("검색어", placeholder="분석할 키워드를 입력하세요 (예: 테슬라, 미국주식)", label_visibility="collapsed")
 
-user_keyword = st.text_input("검색어", value=st.session_state.current_search, placeholder="분석할 키워드 입력 (예: 가죽 공예, 지속가능성)", label_visibility="collapsed")
+current_trends = get_google_trends()
+if current_trends:
+    tags_html = "".join([f'<span class="trend-tag">#{kw}</span>' for kw in current_trends[:6]])
+    st.markdown(tags_html + '<span class="trend-tag" style="background:none; color:#00FF96;">트렌드 더 보기 →</span>', unsafe_allow_html=True)
 
-if st.button("분석 시작하기", type="primary", use_container_width=True) or st.session_state.auto_run:
-    st.session_state.auto_run = False
-    seeds = [k.strip() for k in user_keyword.split(",") if k.strip()] if user_keyword else get_google_trends()
-    
+if st.button("분석 시작하기", type="primary", use_container_width=True):
+    seeds = []
+    if user_keyword.strip():
+        seeds = [k.strip() for k in user_keyword.split(",") if k.strip()]
+    else:
+        seeds = current_trends
+        
     if seeds:
-        # 히스토리에 추가
-        if seeds[0] not in st.session_state.search_history:
-            st.session_state.search_history.append(seeds[0])
+        with st.spinner("네이버 연관 검색어와 경쟁 강도를 분석 중입니다..."):
+            raw_keywords = get_naver_rel_keywords(seeds)
+        
+        if raw_keywords:
+            df_raw = pd.DataFrame(raw_keywords)
+            df_top50 = df_raw.sort_values(by="volume", ascending=False).head(50)
             
-        with st.spinner(f"'{seeds[0]}' 기반 연관어 분석 중..."):
-            raw_data = get_naver_rel_keywords(seeds)
-            if raw_data:
-                df = pd.DataFrame(raw_data).sort_values(by="volume", ascending=False).head(30).reset_index(drop=True)
-                results = []
-                bar = st.progress(0, text="경쟁 강도 측정 중...")
-                for idx, row in enumerate(df.to_dict('records')):
-                    doc = get_blog_doc_count(row['keyword'])
-                    comp = round(doc / row['volume'], 2) if row['volume'] > 0 else 0
-                    results.append({"키워드": row['keyword'], "검색량": row['volume'], "문서수": doc, "경쟁강도": comp})
-                    bar.progress((idx+1)/len(df))
-                
-                final_df = pd.DataFrame(results).sort_values(by="경쟁강도")
-                st.subheader("✨ 분석 완료")
-                st.info("💡 아래 표에서 파고들고 싶은 키워드 줄을 클릭하면 즉시 재분석합니다.")
-                
-                # 상호작용형 데이터프레임
-                event = st.dataframe(final_df, use_container_width=True, on_select="rerun", selection_mode="single-row")
-                
-                if len(event.selection.rows) > 0:
-                    selected_kw = final_df.iloc[event.selection.rows[0]]['키워드']
-                    if selected_kw != st.session_state.current_search:
-                        st.session_state.current_search = selected_kw
-                        st.session_state.auto_run = True
-                        st.rerun()
+            final_results = []
+            my_bar = st.progress(0, text="블로그 문서 수 수집 중...")
+            
+            total_items = len(df_top50)
+            for idx, item in enumerate(df_top50.to_dict('records')):
+                kw, vol = item['keyword'], item['volume']
+                doc = get_blog_doc_count(kw)
+                comp = round(doc / vol, 2) if vol > 0 else 0
+                final_results.append({"키워드": kw, "월간검색량": vol, "블로그문서수": doc, "경쟁강도": comp})
+                my_bar.progress((idx + 1) / total_items, text="블로그 문서 수 수집 중...")
+            
+            df_final = pd.DataFrame(final_results)
+            df_sorted = df_final.sort_values(by=["경쟁강도", "월간검색량"], ascending=[True, False])
+            
+            st.subheader(f"✨ 분석 완료! (총 {len(df_sorted)}개)")
+            st.dataframe(df_sorted, use_container_width=True)
+        else:
+            st.warning("분석할 데이터를 찾지 못했습니다.")
+    else:
+        st.error("데이터를 수집할 수 없습니다.")
