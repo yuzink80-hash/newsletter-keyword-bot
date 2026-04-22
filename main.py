@@ -17,10 +17,22 @@ st.markdown("""
 <style>
     /* 입력창 주변에 은은한 네온 민트색 빛 번짐 효과 */
     div[data-baseweb="input"] > div {
-        background-color: #ffffff;
+        background-color: #ffffff !important;
         border-radius: 8px;
         box-shadow: 0 0 15px rgba(0, 255, 150, 0.2);
         border: 1px solid rgba(0, 255, 150, 0.4);
+    }
+    
+    /* 🌟 [수정된 부분] 입력창 안의 텍스트 색상 강제 지정 */
+    div[data-baseweb="input"] input {
+        color: #1E1E1E !important; /* 사용자가 치는 글씨는 아주 진한 흑회색으로 */
+        -webkit-text-fill-color: #1E1E1E !important;
+    }
+    
+    /* 🌟 [수정된 부분] 안내 문구(Placeholder) 색상 강제 지정 */
+    div[data-baseweb="input"] input::placeholder {
+        color: #A0A0A0 !important; /* 안내 문구는 적당한 회색으로 */
+        -webkit-text-fill-color: #A0A0A0 !important;
     }
     
     /* 해시태그 디자인 */
@@ -65,7 +77,7 @@ except KeyError:
 OPEN_CLIENT_ID = "P5roEfkWrGN1EJ85ifkh"
 OPEN_CLIENT_SECRET = "GFGZuG1x12"
 
-@st.cache_data(ttl=600) # 트렌드 데이터는 10분간 캐시(저장)하여 로딩 속도 향상
+@st.cache_data(ttl=600)
 def get_google_trends():
     url = "https://trends.google.com/trending/rss?geo=KR"
     try:
@@ -123,21 +135,17 @@ def get_blog_doc_count(keyword):
 st.title("🚀 황금키워드 데이터랩")
 st.markdown('<p class="sub-title">키워드 데이터 분석을 통해 콘텐츠의 유입률을 늘리고, 비즈니스를 확장시켜보세요.</p>', unsafe_allow_html=True)
 
-# 1. 레퍼런스 스타일의 검색창 배열 (드롭다운 + 텍스트 입력창)
 col1, col2 = st.columns([1, 6])
 with col1:
     search_engine = st.selectbox("엔진", ["NAVER", "GOOGLE"], label_visibility="collapsed")
 with col2:
     user_keyword = st.text_input("검색어", placeholder="분석할 키워드를 입력하세요 (예: 테슬라, 미국주식)", label_visibility="collapsed")
 
-# 2. 실시간 급상승 트렌드를 가로형 해시태그로 배치
 current_trends = get_google_trends()
 if current_trends:
-    # 상위 5개의 트렌드만 뽑아서 해시태그 HTML 생성
     tags_html = "".join([f'<span class="trend-tag">#{kw}</span>' for kw in current_trends[:6]])
     st.markdown(tags_html + '<span class="trend-tag" style="background:none; color:#00FF96;">트렌드 더 보기 →</span>', unsafe_allow_html=True)
 
-# 3. 분석 시작 버튼 및 로직
 if st.button("분석 시작하기", type="primary", use_container_width=True):
     seeds = []
     if user_keyword.strip():
