@@ -313,36 +313,40 @@ if is_clicked or st.session_state.auto_run:
 
         with st.spinner("네이버 연관 검색어와 경쟁 강도를 분석 중입니다..."):
             raw_keywords = get_naver_rel_keywords(seeds)
-        
+            # keyword tool에서 못 찾으면 자동완성 결과로 보완
+            if not raw_keywords:
+                autocomplete_kws = get_naver_autocomplete(target_kw)
+                raw_keywords = [{"keyword": kw, "volume": 0} for kw in autocomplete_kws]
+
         if raw_keywords:
             df_raw = pd.DataFrame(raw_keywords)
             df_top50 = df_raw.sort_values(by="volume", ascending=False).head(50)
-            
+
             final_results = []
             my_bar = st.progress(0, text="블로그 문서 수 수집 중...")
-            
+
             total_items = len(df_top50)
             for idx, item in enumerate(df_top50.to_dict('records')):
                 doc = get_blog_doc_count(item['keyword'])
                 comp = round(doc / item['volume'], 2) if item['volume'] > 0 else 0
                 final_results.append({"키워드": item['keyword'], "월간검색량": item['volume'], "블로그문서수": doc, "경쟁강도": comp})
                 my_bar.progress((idx + 1) / total_items, text="블로그 문서 수 수집 중...")
-            
+
             df_final = pd.DataFrame(final_results)
             df_sorted = df_final.sort_values(by=["경쟁강도", "월간검색량"], ascending=[True, False]).reset_index(drop=True)
-            
+
             st.subheader(f"✨ 연관 검색어 분석 완료! (총 {len(df_sorted)}개)")
             st.caption("👇 표에서 파고들고 싶은 키워드 행을 **마우스로 클릭**해 보세요. 즉시 꼬리물기 분석이 시작됩니다!")
-            
+
             event = st.dataframe(df_sorted, use_container_width=True, on_select="rerun", selection_mode="single-row")
-            
+
             if len(event.selection.rows) > 0:
                 clicked_kw = df_sorted.iloc[event.selection.rows[0]]['키워드']
                 if clicked_kw != st.session_state.current_search:
                     st.session_state.current_search = clicked_kw
                     st.session_state.auto_run = True
-                    st.rerun() 
+                    st.rerun()
         else:
-            st.warning("분석할 데이터를 찾지 못했습니다.")
+            st.warning("연관 검색어를 찾지 못했습니다. 다른 키워드로 시도해보세요.")
     else:
         st.error("데이터를 수집할 수 없습니다.")
