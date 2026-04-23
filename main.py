@@ -155,6 +155,28 @@ st.markdown("""
         color: #F4EFE4 !important;
     }
 
+    /* ── 연관 키워드 행 버튼 ── */
+    div[data-testid="stButton"] button[kind="secondary"].rel-kw-btn,
+    [data-testid="element-container"]:has(button[key*="rel_kw_btn"]) button {
+        background-color: transparent !important;
+        border: none !important;
+        border-radius: 6px !important;
+        color: #9A7B3C !important;
+        font-size: 0.88em !important;
+        font-weight: 500 !important;
+        padding: 4px 8px !important;
+        line-height: 1.5 !important;
+        height: auto !important;
+        min-height: unset !important;
+        text-align: left !important;
+        white-space: normal !important;
+    }
+    [data-testid="element-container"]:has(button[key*="rel_kw_btn"]) button:hover {
+        background-color: rgba(154,123,60,0.12) !important;
+        color: #C4973E !important;
+        border: none !important;
+    }
+
     /* ── 구분선 ── */
     hr { border-color: rgba(138,128,112,0.2) !important; margin: 28px 0 !important; }
 
@@ -570,17 +592,30 @@ if is_clicked or st.session_state.auto_run:
             <div class="section-card">
                 <div class="section-card-title">Related Keywords</div>
                 <div class="section-card-heading">✨ 연관 검색어 분석 완료 <span style="color:#9A7B3C;">({len(df_sorted)}개)</span></div>
-                <div style="color:#8A8070; font-size:0.85em;">👇 표에서 파고들고 싶은 키워드 행을 클릭하면 즉시 꼬리물기 분석이 시작됩니다.</div>
+                <div style="color:#8A8070; font-size:0.85em;">👇 키워드를 클릭하면 즉시 꼬리물기 분석이 시작됩니다.</div>
             </div>""", unsafe_allow_html=True)
 
-            event = st.dataframe(df_sorted, use_container_width=True, on_select="rerun", selection_mode="single-row")
+            # 테이블 헤더
+            h0, h1, h2, h3 = st.columns([4, 2, 2, 2])
+            for col, label in zip([h0, h1, h2, h3], ["키워드", "월간검색량", "블로그문서수", "경쟁강도"]):
+                col.markdown(f'<div style="color:#8A8070; font-size:0.78em; font-weight:600; padding:4px 0 8px 0; border-bottom:1px solid rgba(138,128,112,0.25);">{label}</div>', unsafe_allow_html=True)
 
-            if len(event.selection.rows) > 0:
-                clicked_kw = df_sorted.iloc[event.selection.rows[0]]['키워드']
-                if clicked_kw != st.session_state.current_search:
-                    st.session_state.current_search = clicked_kw
-                    st.session_state.auto_run = True
-                    st.rerun()
+            # 테이블 행 — 키워드는 버튼, 나머지는 텍스트
+            for i, row in df_sorted.iterrows():
+                c0, c1, c2, c3 = st.columns([4, 2, 2, 2])
+                with c0:
+                    if st.button(
+                        f"🔍 {row['키워드']}",
+                        key=f"rel_kw_btn_{i}",
+                        use_container_width=True,
+                        help=f"'{row['키워드']}' 분석 시작"
+                    ):
+                        st.session_state.current_search = row['키워드']
+                        st.session_state.auto_run = True
+                        st.rerun()
+                c1.markdown(f'<div style="padding:6px 0; color:#F4EFE4; font-size:0.9em;">{int(row["월간검색량"]):,}</div>', unsafe_allow_html=True)
+                c2.markdown(f'<div style="padding:6px 0; color:#F4EFE4; font-size:0.9em;">{int(row["블로그문서수"]):,}</div>', unsafe_allow_html=True)
+                c3.markdown(f'<div style="padding:6px 0; color:#8A8070; font-size:0.9em;">{row["경쟁강도"]}</div>', unsafe_allow_html=True)
         else:
             st.warning("연관 검색어를 찾지 못했습니다. 다른 키워드로 시도해보세요.")
     else:
