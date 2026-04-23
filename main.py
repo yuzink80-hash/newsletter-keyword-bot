@@ -275,16 +275,20 @@ def generate_mock_demographics(keyword):
 
 @st.cache_data(ttl=600)
 def get_youtube_stats(keyword):
-    """YouTube Data API v3로 키워드 관련 영상 수집 및 경쟁 분석"""
+    """
+    YouTube Data API v3 — 쿼터 최적화 방식.
+    search.list 1회(maxResults=50, 100유닛) + videos.list 1회(1유닛) = 101유닛.
+    50개 수집 후 조회수 기준 TOP 10 추출 → 기존 10개 방식과 비용 동일, 정확도 5배.
+    """
     if not YOUTUBE_API_KEY:
         return None, []
     try:
-        # 1단계: 키워드로 영상 검색
+        # 1단계: 검색 결과 50개 수집 (1회 호출 = 100유닛)
         search_res = requests.get(
             "https://www.googleapis.com/youtube/v3/search",
             params={
                 "q": keyword, "part": "snippet", "type": "video",
-                "maxResults": 10, "regionCode": "KR",
+                "maxResults": 50, "regionCode": "KR",
                 "relevanceLanguage": "ko", "key": YOUTUBE_API_KEY
             }
         )
@@ -297,17 +301,17 @@ def get_youtube_stats(keyword):
         if not items:
             return total_results, []
 
-        # 2단계: 영상 ID로 통계 조회
-        video_ids = [item["id"]["videoId"] for item in items]
+        # 2단계: 영상 50개 통계 일괄 조회 (1회 호출 = 1유닛)
+        video_ids = [item["id"]["videoId"] for item in items if item.get("id", {}).get("videoId")]
         stats_res = requests.get(
             "https://www.googleapis.com/youtube/v3/videos",
             params={"id": ",".join(video_ids), "part": "statistics,snippet", "key": YOUTUBE_API_KEY}
         )
-        videos = []
+        all_videos = []
         for item in stats_res.json().get("items", []):
             stat = item.get("statistics", {})
             snip = item.get("snippet", {})
-            videos.append({
+            all_videos.append({
                 "제목": snip.get("title", ""),
                 "채널": snip.get("channelTitle", ""),
                 "조회수": int(stat.get("viewCount", 0)),
@@ -315,7 +319,11 @@ def get_youtube_stats(keyword):
                 "댓글수": int(stat.get("commentCount", 0)),
                 "url": f"https://www.youtube.com/watch?v={item['id']}",
             })
-        return total_results, sorted(videos, key=lambda x: x["조회수"], reverse=True)
+
+        # 3단계: 조회수 기준 TOP 10 추출
+        top10 = sorted(all_videos, key=lambda x: x["조회수"], reverse=True)[:10]
+        return total_results, top10
+
     except:
         return None, []
 
