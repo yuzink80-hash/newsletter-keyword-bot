@@ -483,9 +483,9 @@ if is_clicked or st.session_state.auto_run:
         # ══════════════════════════════════════════
         # 🔍 검색 분석
         # ══════════════════════════════════════════
-        if analysis_type == '검색 분석':
-            trend_df = get_datalab_trend(target_kw)
-            if trend_df is not None:
+        trend_df = get_datalab_trend(target_kw) if analysis_type == '검색 분석' else None
+
+        if analysis_type == '검색 분석' and trend_df is not None:
             # 1. 1년 트렌드 선 그래프
             st.markdown(f"""
             <div class="section-card">
