@@ -324,13 +324,24 @@ def get_naver_rel_keywords(seeds):
     # 1차 시도: 전체 키워드 + 자동완성
     autocomplete_kws = get_naver_autocomplete(base_kw)
     all_seeds = list(dict.fromkeys([base_kw] + autocomplete_kws + seeds[1:]))
-    hint_str = ",".join(all_seeds[:5])
+    # 빈 문자열·특수문자 제거 후 최대 5개로 제한
+    cleaned = [kw.strip() for kw in all_seeds if kw and kw.strip() and len(kw.strip()) >= 2]
+    hint_str = ",".join(cleaned[:5]) if cleaned else base_kw
     try:
         result = _call_naver_keyword_tool(hint_str)
         if result:  # 1개 이상 결과
             return result
     except Exception:
         pass
+
+    # 1.5차: 합성 hint 실패 시 base_kw 단독으로 재시도
+    if hint_str != base_kw:
+        try:
+            result = _call_naver_keyword_tool(base_kw)
+            if result:
+                return result
+        except Exception:
+            pass
 
     # 2차 시도: 긴 문장형 키워드일 경우 첫 단어(핵심 명사)만으로 재시도
     first_word = base_kw.split()[0] if ' ' in base_kw else base_kw
