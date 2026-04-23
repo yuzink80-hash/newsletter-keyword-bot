@@ -330,6 +330,35 @@ def get_blog_doc_count(keyword):
     except: pass
     return 0
 
+@st.cache_data(ttl=600)
+def get_naver_shopping(keyword, display=100):
+    """네이버 쇼핑 API — 총 상품 수, 가격대, 상품 목록 반환"""
+    headers = {"X-Naver-Client-Id": OPEN_CLIENT_ID, "X-Naver-Client-Secret": OPEN_CLIENT_SECRET}
+    try:
+        res = requests.get(
+            "https://openapi.naver.com/v1/search/shop.json",
+            params={"query": keyword, "display": display, "sort": "sim"},
+            headers=headers, timeout=8
+        )
+        if res.status_code == 200:
+            data = res.json()
+            total = data.get('total', 0)
+            products = []
+            for item in data.get('items', []):
+                title = re.sub(r'<[^>]+>', '', item.get('title', ''))
+                lprice = int(item.get('lprice', 0) or 0)
+                products.append({
+                    "상품명": title,
+                    "최저가": lprice,
+                    "판매처": item.get('mallName', '-'),
+                    "브랜드": item.get('brand', '') or '-',
+                    "카테고리": item.get('category1', '') or '기타',
+                    "링크": item.get('link', ''),
+                })
+            return total, products
+    except: pass
+    return 0, []
+
 # 🌟 [신규] UI 구성을 위한 추정치 생성 알고리즘 (Hash 기반)
 def generate_mock_demographics(keyword):
     # 키워드마다 고유한 숫자를 생성하여 비율을 일정하게 유지
@@ -421,7 +450,7 @@ st.markdown('<p class="sub-title">키워드 데이터 분석을 통해 콘텐츠
 
 col1, col2 = st.columns([1, 6])
 with col1:
-    search_engine = st.selectbox("엔진", ["NAVER", "GOOGLE"], label_visibility="collapsed")
+    st.selectbox("분석 유형", ["검색 분석", "쇼핑 분석"], label_visibility="collapsed", key="analysis_type_widget")
 with col2:
     def update_search():
         st.session_state.current_search = st.session_state.search_input_widget
@@ -449,9 +478,14 @@ if is_clicked or st.session_state.auto_run:
 
     if seeds:
         target_kw = seeds[0]
-        trend_df = get_datalab_trend(target_kw)
-        
-        if trend_df is not None:
+        analysis_type = st.session_state.get('analysis_type_widget', '검색 분석')
+
+        # ══════════════════════════════════════════
+        # 🔍 검색 분석
+        # ══════════════════════════════════════════
+        if analysis_type == '검색 분석':
+            trend_df = get_datalab_trend(target_kw)
+            if trend_df is not None:
             # 1. 1년 트렌드 선 그래프
             st.markdown(f"""
             <div class="section-card">
@@ -619,6 +653,111 @@ if is_clicked or st.session_state.auto_run:
 
             st.divider()
 
+        # ══════════════════════════════════════════
+        # 🛍️ 쇼핑 분석
+        # ══════════════════════════════════════════
+        elif analysis_type == '쇼핑 분석':
+            st.markdown(f"""
+            <div class="section-card">
+                <div class="section-card-title">Shopping Analysis</div>
+                <div class="section-card-heading">🛍️ '{target_kw}' 네이버 쇼핑 분석</div>
+            </div>""", unsafe_allow_html=True)
+
+            with st.spinner("쇼핑 데이터를 불러오는 중..."):
+                shop_total, shop_products = get_naver_shopping(target_kw)
+
+            if shop_products:
+                prices = [p["최저가"] for p in shop_products if p["최저가"] > 0]
+                min_price = min(prices) if prices else 0
+                avg_price = int(sum(prices) / len(prices)) if prices else 0
+
+                # 카테고리 분포 집계
+                cat_counts = {}
+                for p in shop_products:
+                    c = p["카테고리"] or "기타"
+                    cat_counts[c] = cat_counts.get(c, 0) + 1
+                top_cats = sorted(cat_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+                # 경쟁 강도 판단
+                if shop_total >= 100000:
+                    comp_label, comp_color = "매우 높음", "#E05050"
+                elif shop_total >= 30000:
+                    comp_label, comp_color = "높음", "#C4973E"
+                elif shop_total >= 5000:
+                    comp_label, comp_color = "중간", "#9A7B3C"
+                else:
+                    comp_label, comp_color = "낮음", "#4BB478"
+
+                # 지표 카드
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("📦 총 상품 수", f"{shop_total:,}개")
+                m2.metric("💰 최저가", f"₩{min_price:,}" if min_price else "정보 없음")
+                m3.metric("📊 평균가", f"₩{avg_price:,}" if avg_price else "정보 없음")
+                m4.metric("⚔️ 쇼핑 경쟁도", comp_label)
+
+                st.divider()
+
+                col_chart, col_table = st.columns([1, 2])
+
+                with col_chart:
+                    st.markdown("##### 📦 카테고리 분포")
+                    if top_cats:
+                        cat_df = pd.DataFrame(top_cats, columns=["카테고리", "상품수"])
+                        axis_cfg = alt.Axis(labelAngle=0, title=None, labelColor="#8A8070",
+                                            tickColor="transparent", domainColor="rgba(138,128,112,0.25)")
+                        y_axis_cfg = alt.Axis(title=None, labelColor="#8A8070",
+                                              gridColor="rgba(138,128,112,0.12)",
+                                              domainColor="transparent", tickColor="transparent")
+                        st.altair_chart(
+                            alt.Chart(cat_df)
+                            .mark_bar(color="#9A7B3C", cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                            .encode(
+                                x=alt.X("카테고리:N", sort=None, axis=axis_cfg),
+                                y=alt.Y("상품수:Q", axis=y_axis_cfg),
+                                tooltip=["카테고리", "상품수"]
+                            )
+                            .properties(height=220)
+                            .configure_view(strokeWidth=0, fill="#1C1A17")
+                            .configure(background="#1C1A17"),
+                            use_container_width=True
+                        )
+
+                with col_table:
+                    st.markdown("##### 🏆 상위 노출 상품 TOP 10")
+                    rows_html = ""
+                    for idx, p in enumerate(shop_products[:10]):
+                        row_bg = "rgba(154,123,60,0.04)" if idx % 2 == 0 else "transparent"
+                        price_str = f"₩{p['최저가']:,}" if p['최저가'] > 0 else "-"
+                        rows_html += f"""
+                        <tr style="border-bottom:1px solid rgba(138,128,112,0.12); background:{row_bg};">
+                            <td style="padding:9px 8px;">
+                                <a href="{p['링크']}" target="_blank"
+                                   style="color:#9A7B3C; text-decoration:none; font-weight:500;"
+                                   onmouseover="this.style.textDecoration='underline'"
+                                   onmouseout="this.style.textDecoration='none'">{p['상품명'][:30]}{"..." if len(p['상품명'])>30 else ""}</a>
+                            </td>
+                            <td style="padding:9px 8px; color:#F4EFE4; text-align:right; white-space:nowrap;">{price_str}</td>
+                            <td style="padding:9px 8px; color:#8A8070; white-space:nowrap;">{p['판매처']}</td>
+                        </tr>"""
+                    st.markdown(f"""
+                    <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(138,128,112,0.3);">
+                                <th style="text-align:left; padding:9px 8px; color:#8A8070; font-weight:600;">상품명</th>
+                                <th style="text-align:right; padding:9px 8px; color:#8A8070; font-weight:600;">최저가</th>
+                                <th style="text-align:left; padding:9px 8px; color:#8A8070; font-weight:600;">판매처</th>
+                            </tr>
+                        </thead>
+                        <tbody>{rows_html}</tbody>
+                    </table>""", unsafe_allow_html=True)
+            else:
+                st.warning("쇼핑 데이터를 가져올 수 없습니다. 다른 키워드로 시도해보세요.")
+
+            st.divider()
+
+        # ══════════════════════════════════════════
+        # 공통: 연관 검색어 + 경쟁강도 테이블 (두 분석 모두 표시)
+        # ══════════════════════════════════════════
         with st.spinner("네이버 연관 검색어와 경쟁 강도를 분석 중입니다..."):
             raw_keywords = get_naver_rel_keywords(seeds)
             # keyword tool에서 못 찾으면 자동완성 결과로 보완
