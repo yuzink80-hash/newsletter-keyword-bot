@@ -33,6 +33,8 @@ if 'last_df_sorted' not in st.session_state:
     st.session_state.last_df_sorted = None
 if 'last_target_kw' not in st.session_state:
     st.session_state.last_target_kw = ""
+if 'last_category' not in st.session_state:
+    st.session_state.last_category = ""
 
 # 검색바 텍스트 동기화: text_input 렌더링 전에 위젯 키를 업데이트해야 에러가 없음
 if st.session_state.get('_pending_search'):
@@ -359,12 +361,18 @@ def save_to_archive(target_kw, category, df_sorted):
     try:
         gsheet_url = st.secrets.get("GSHEET_URL", "")
         sa_info    = dict(st.secrets["gcp_service_account"])
-    except Exception:
-        st.warning("⚙️ 구글 시트 연동 설정이 필요합니다.\nStreamlit Cloud → Settings → Secrets에 `GSHEET_URL`과 `[gcp_service_account]`를 등록해주세요.")
+    except Exception as e:
+        st.error(f"⚙️ Secrets 읽기 실패: {e}")
+        return False
+    if not gsheet_url:
+        st.error("GSHEET_URL이 비어 있습니다. Secrets에 구글 시트 URL을 넣어주세요.")
         return False
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets",
                   "https://www.googleapis.com/auth/drive"]
+        # private_key의 \\n → \n 변환 (TOML 저장 시 이스케이프 문제 방지)
+        if 'private_key' in sa_info:
+            sa_info['private_key'] = sa_info['private_key'].replace('\\n', '\n')
         creds  = Credentials.from_service_account_info(sa_info, scopes=scopes)
         client = gspread.authorize(creds)
         ws     = client.open_by_url(gsheet_url).sheet1
@@ -890,6 +898,7 @@ if is_clicked or st.session_state.auto_run:
             # 세션에 저장 (save_to_archive 버튼에서 참조)
             st.session_state.last_df_sorted  = df_sorted
             st.session_state.last_target_kw  = target_kw
+            st.session_state.last_category   = _final_category
 
             st.markdown(f"""
             <div class="section-card">
@@ -923,23 +932,22 @@ if is_clicked or st.session_state.auto_run:
         else:
             st.warning("연관 검색어를 찾지 못했습니다. 다른 키워드로 시도해보세요.")
 
-        # ── 아카이브 저장 버튼 ─────────────────────────────
-        st.divider()
-        save_col1, save_col2 = st.columns([3, 1])
-        with save_col1:
-            st.caption(f"카테고리: **{_final_category}** · 키워드: **{st.session_state.last_target_kw}** · 연관 {len(st.session_state.last_df_sorted) if st.session_state.last_df_sorted is not None else 0}개")
-        with save_col2:
-            if st.button("💾 구글 시트에 저장", key="save_archive_btn", use_container_width=True):
-                if st.session_state.last_df_sorted is not None:
-                    ok = save_to_archive(
-                        st.session_state.last_target_kw,
-                        _final_category,
-                        st.session_state.last_df_sorted
-                    )
-                    if ok:
-                        st.success(f"✅ '{st.session_state.last_target_kw}' 분석 결과를 구글 시트에 저장했습니다!")
-                else:
-                    st.warning("먼저 분석을 실행해주세요.")
-
     else:
         st.error("데이터를 수집할 수 없습니다.")
+
+# ── 아카이브 저장 버튼 (분석 블록 바깥 — 항상 렌더링) ────────────
+if st.session_state.last_df_sorted is not None:
+    st.divider()
+    save_col1, save_col2 = st.columns([3, 1])
+    with save_col1:
+        n_rel = len(st.session_state.last_df_sorted)
+        st.caption(f"카테고리: **{st.session_state.last_category}** · 키워드: **{st.session_state.last_target_kw}** · 연관 {n_rel}개")
+    with save_col2:
+        if st.button("💾 구글 시트에 저장", key="save_archive_btn", use_container_width=True):
+            ok = save_to_archive(
+                st.session_state.last_target_kw,
+                st.session_state.last_category,
+                st.session_state.last_df_sorted
+            )
+            if ok:
+                st.success(f"✅ '{st.session_state.last_target_kw}' 저장 완료!")
