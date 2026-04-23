@@ -29,6 +29,39 @@ st.markdown("""
     .stApp { background-color: #1C1A17; }
     section[data-testid="stSidebar"] { background-color: #1C1A17; }
 
+    /* ── 콘텐츠 여백 (블랙키위 스타일 side margin) ── */
+    .main .block-container {
+        max-width: 1080px !important;
+        padding-left: 2.5rem !important;
+        padding-right: 2.5rem !important;
+        padding-top: 2rem !important;
+        margin: 0 auto !important;
+    }
+
+    /* ── 섹션 카드 ── */
+    .section-card {
+        background-color: #232018;
+        border: 1px solid rgba(138, 128, 112, 0.18);
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.28), 0 1px 6px rgba(0,0,0,0.16);
+        padding: 24px 28px;
+        margin-bottom: 20px;
+    }
+    .section-card-title {
+        font-size: 0.72em;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8A8070;
+        margin-bottom: 4px;
+    }
+    .section-card-heading {
+        font-size: 1.15em;
+        font-weight: 700;
+        color: #F4EFE4;
+        margin-bottom: 16px;
+    }
+
     /* ── 검색창 ── */
     div[data-baseweb="input"] > div {
         background-color: #F4EFE4 !important;
@@ -50,7 +83,7 @@ st.markdown("""
     .trend-tag {
         display: inline-block; padding: 6px 14px; margin: 5px 8px 15px 0;
         border-radius: 20px; background-color: #2A2620;
-        border: 1px solid #8A8070;
+        border: 1px solid rgba(138, 128, 112, 0.4);
         color: #F4EFE4; font-size: 0.85em; font-weight: 500;
         transition: all 0.25s ease;
     }
@@ -62,24 +95,27 @@ st.markdown("""
     }
 
     /* ── 서브타이틀 ── */
-    .sub-title { color: #9A7B3C; font-size: 1.1em; margin-bottom: 20px; }
-
-    /* ── 차트 박스 ── */
-    .chart-box {
-        border: 1px solid #8A8070;
-        padding: 15px; border-radius: 8px;
-        background-color: #2A2620;
-    }
+    .sub-title { color: #9A7B3C; font-size: 1em; margin-bottom: 24px; font-weight: 400; }
 
     /* ── 메트릭 카드 ── */
     div[data-testid="metric-container"] {
-        background-color: #2A2620;
-        border: 1px solid #8A8070;
-        border-radius: 8px; padding: 12px;
+        background-color: #232018;
+        border: 1px solid rgba(138, 128, 112, 0.2);
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.2);
     }
-    div[data-testid="metric-container"] label { color: #8A8070 !important; }
+    div[data-testid="metric-container"] label { color: #8A8070 !important; font-size: 0.8em !important; }
     div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-        color: #F4EFE4 !important;
+        color: #F4EFE4 !important; font-size: 1.6em !important; font-weight: 700 !important;
+    }
+
+    /* ── 데이터프레임 ── */
+    [data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+        border: 1px solid rgba(138,128,112,0.18) !important;
     }
 
     /* ── 버튼 ── */
@@ -88,17 +124,23 @@ st.markdown("""
         border: none !important;
         color: #F4EFE4 !important;
         font-weight: 600;
+        border-radius: 8px !important;
+        letter-spacing: 0.03em;
     }
     div[data-testid="stButton"] button[kind="primary"]:hover {
-        background-color: #8A6B2C !important;
+        background-color: #7A6030 !important;
+        box-shadow: 0 4px 12px rgba(154,123,60,0.3) !important;
     }
 
     /* ── 구분선 ── */
-    hr { border-color: #8A8070 !important; opacity: 0.3; }
+    hr { border-color: rgba(138,128,112,0.2) !important; margin: 28px 0 !important; }
 
-    /* ── 헤더 텍스트 ── */
-    h1, h2, h3, h4 { color: #F4EFE4 !important; }
-    p, li, span { color: #F4EFE4; }
+    /* ── 타이포그래피 ── */
+    h1 { color: #F4EFE4 !important; font-size: 1.7em !important; font-weight: 700 !important; letter-spacing: -0.01em; }
+    h2, h3 { color: #F4EFE4 !important; font-weight: 600 !important; }
+    h4, h5 { color: #D4C9B8 !important; font-weight: 600 !important; font-size: 0.95em !important; }
+    p, li { color: #C8BFB0; }
+    small, caption { color: #8A8070 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -296,7 +338,11 @@ if is_clicked or st.session_state.auto_run:
         
         if trend_df is not None:
             # 1. 1년 트렌드 선 그래프
-            st.markdown(f"#### 📈 '{target_kw}' 최근 1년 검색 트렌드")
+            st.markdown(f"""
+            <div class="section-card">
+                <div class="section-card-title">Search Trend</div>
+                <div class="section-card-heading">📈 '{target_kw}' 최근 1년 검색 트렌드</div>
+            </div>""", unsafe_allow_html=True)
             monthly_trend = trend_df.groupby(trend_df.index.to_period('M')).mean()
             monthly_trend.index = monthly_trend.index.to_timestamp()
             st.line_chart(monthly_trend, color="#9A7B3C")
@@ -333,8 +379,12 @@ if is_clicked or st.session_state.auto_run:
             
             st.divider()
             
-            # 🌟 3. [신규] 연령, 성별, 이슈성, 상업성 분석 대시보드
-            st.markdown(f"#### 👥 '{target_kw}' 검색자 성향 분석 (추정 지표)")
+            # 3. 검색자 성향 분석
+            st.markdown(f"""
+            <div class="section-card">
+                <div class="section-card-title">Audience Analysis</div>
+                <div class="section-card-heading">👥 '{target_kw}' 검색자 성향 분석 <span style="font-size:0.75em; color:#8A8070; font-weight:400;">(추정 지표)</span></div>
+            </div>""", unsafe_allow_html=True)
             
             # 추정치 데이터 가져오기
             age, male, female, issue, normal, com, info = generate_mock_demographics(target_kw)
@@ -368,8 +418,12 @@ if is_clicked or st.session_state.auto_run:
 
             st.divider()
 
-            # 🎥 4. YouTube 경쟁 분석
-            st.markdown(f"#### 🎥 '{target_kw}' YouTube 경쟁 분석")
+            # 4. YouTube 경쟁 분석
+            st.markdown(f"""
+            <div class="section-card">
+                <div class="section-card-title">YouTube Competition</div>
+                <div class="section-card-heading">🎥 '{target_kw}' YouTube 경쟁 분석</div>
+            </div>""", unsafe_allow_html=True)
             with st.spinner("YouTube 데이터를 불러오는 중..."):
                 yt_total, yt_videos = get_youtube_stats(target_kw)
 
@@ -418,8 +472,12 @@ if is_clicked or st.session_state.auto_run:
             df_final = pd.DataFrame(final_results)
             df_sorted = df_final.sort_values(by=["경쟁강도", "월간검색량"], ascending=[True, False]).reset_index(drop=True)
 
-            st.subheader(f"✨ 연관 검색어 분석 완료! (총 {len(df_sorted)}개)")
-            st.caption("👇 표에서 파고들고 싶은 키워드 행을 **마우스로 클릭**해 보세요. 즉시 꼬리물기 분석이 시작됩니다!")
+            st.markdown(f"""
+            <div class="section-card">
+                <div class="section-card-title">Related Keywords</div>
+                <div class="section-card-heading">✨ 연관 검색어 분석 완료 <span style="color:#9A7B3C;">({len(df_sorted)}개)</span></div>
+                <div style="color:#8A8070; font-size:0.85em;">👇 표에서 파고들고 싶은 키워드 행을 클릭하면 즉시 꼬리물기 분석이 시작됩니다.</div>
+            </div>""", unsafe_allow_html=True)
 
             event = st.dataframe(df_sorted, use_container_width=True, on_select="rerun", selection_mode="single-row")
 
