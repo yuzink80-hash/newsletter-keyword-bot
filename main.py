@@ -87,9 +87,28 @@ def get_datalab_trend(keyword):
     except: pass
     return None
 
+@st.cache_data(ttl=600)
+def get_naver_autocomplete(keyword):
+    """네이버 자동완성 API — 인증 없이 연관 검색어 발굴 (공백 유지)"""
+    try:
+        res = requests.get(
+            "https://ac.search.naver.com/nx/ac",
+            params={"q": keyword, "st": 100, "r_format": "json", "r_enc": "UTF-8",
+                    "q_enc": "UTF-8", "t_koreng": 1, "ans": 2},
+            timeout=5
+        )
+        items = res.json().get("items", [[]])
+        return [item[0] for item in items[0] if item and item[0] != keyword]
+    except:
+        return []
+
 def get_naver_rel_keywords(seeds):
     if not seeds: return []
-    hint_str = ",".join(seeds[:5]).replace(" ", "")
+    # ✅ 공백 제거(.replace(" ", "")) 버그 수정 — 원본 키워드 그대로 전달
+    base_kw = seeds[0]
+    autocomplete_kws = get_naver_autocomplete(base_kw)
+    all_seeds = list(dict.fromkeys([base_kw] + autocomplete_kws + seeds[1:]))
+    hint_str = ",".join(all_seeds[:5])  # 공백 제거 없이 그대로 사용
     timestamp = str(round(time.time() * 1000))
     message = timestamp + ".GET./keywordstool"
     try:
