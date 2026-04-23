@@ -383,6 +383,7 @@ if current_trends:
         with trend_cols[i]:
             if st.button(f"#{kw}", key=f"trend_tag_{i}", use_container_width=True):
                 st.session_state.current_search = kw
+                st.session_state.search_input_widget = kw
                 st.session_state.auto_run = True
                 st.rerun()
 
@@ -611,6 +612,7 @@ if is_clicked or st.session_state.auto_run:
                         help=f"'{row['키워드']}' 분석 시작"
                     ):
                         st.session_state.current_search = row['키워드']
+                        st.session_state.search_input_widget = row['키워드']
                         st.session_state.auto_run = True
                         st.rerun()
                 c1.markdown(f'<div style="padding:6px 0; color:#F4EFE4; font-size:0.9em;">{int(row["월간검색량"]):,}</div>', unsafe_allow_html=True)
