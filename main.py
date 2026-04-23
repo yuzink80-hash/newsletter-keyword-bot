@@ -20,6 +20,11 @@ if 'current_search' not in st.session_state:
 if 'auto_run' not in st.session_state:
     st.session_state.auto_run = False
 
+# 검색바 텍스트 동기화: text_input 렌더링 전에 위젯 키를 업데이트해야 에러가 없음
+if st.session_state.get('_pending_search'):
+    st.session_state.search_input_widget = st.session_state._pending_search
+    st.session_state._pending_search = None
+
 # ==========================================
 # 🎨 커스텀 CSS (기존 레이아웃 100% 유지)
 # ==========================================
@@ -383,7 +388,7 @@ if current_trends:
         with trend_cols[i]:
             if st.button(f"#{kw}", key=f"trend_tag_{i}", use_container_width=True):
                 st.session_state.current_search = kw
-                st.session_state.search_input_widget = kw
+                st.session_state._pending_search = kw
                 st.session_state.auto_run = True
                 st.rerun()
 
@@ -612,7 +617,7 @@ if is_clicked or st.session_state.auto_run:
                         help=f"'{row['키워드']}' 분석 시작"
                     ):
                         st.session_state.current_search = row['키워드']
-                        st.session_state.search_input_widget = row['키워드']
+                        st.session_state._pending_search = row['키워드']
                         st.session_state.auto_run = True
                         st.rerun()
                 c1.markdown(f'<div style="padding:6px 0; color:#F4EFE4; font-size:0.9em;">{int(row["월간검색량"]):,}</div>', unsafe_allow_html=True)
