@@ -307,6 +307,8 @@ def _call_naver_keyword_tool(hint_str: str):
             mob_pct = round(mob / total * 100, 1) if total > 0 else 0
             result.append({"keyword": i['relKeyword'], "volume": total, "mobile_pct": mob_pct})
         return result
+    # 실패 시 상태코드·응답 내용을 session_state에 기록 (디버그용)
+    st.session_state['_ad_api_debug'] = f"status={res.status_code} / {res.text[:200]}"
     return None   # 200 아니면 None (오류 구분용)
 
 def get_naver_rel_keywords(seeds):
@@ -574,6 +576,10 @@ if current_trends:
                 st.rerun()
 
 is_clicked = st.button("분석 시작하기", type="primary", use_container_width=True)
+
+# 검색광고 API 디버그 메시지 (문제 진단용)
+if st.session_state.get('_ad_api_debug'):
+    st.warning(f"🔍 [AD API 디버그] {st.session_state['_ad_api_debug']}")
 
 if is_clicked or st.session_state.auto_run:
     st.session_state.auto_run = False 
