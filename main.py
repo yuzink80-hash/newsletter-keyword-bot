@@ -313,6 +313,7 @@ def get_youtube_stats(keyword):
                 "조회수": int(stat.get("viewCount", 0)),
                 "좋아요": int(stat.get("likeCount", 0)),
                 "댓글수": int(stat.get("commentCount", 0)),
+                "url": f"https://www.youtube.com/watch?v={item['id']}",
             })
         return total_results, sorted(videos, key=lambda x: x["조회수"], reverse=True)
     except:
@@ -500,11 +501,34 @@ if is_clicked or st.session_state.auto_run:
 
                 if yt_videos:
                     st.markdown("##### 🏆 상위 노출 영상 TOP 10")
-                    df_yt = pd.DataFrame(yt_videos)
-                    df_yt["조회수"] = df_yt["조회수"].apply(lambda x: f"{x:,}")
-                    df_yt["좋아요"] = df_yt["좋아요"].apply(lambda x: f"{x:,}")
-                    df_yt["댓글수"] = df_yt["댓글수"].apply(lambda x: f"{x:,}")
-                    st.dataframe(df_yt, use_container_width=True, hide_index=True)
+                    rows_html = ""
+                    for idx, v in enumerate(yt_videos):
+                        row_bg = "rgba(154,123,60,0.04)" if idx % 2 == 0 else "transparent"
+                        rows_html += f"""
+                        <tr style="border-bottom:1px solid rgba(138,128,112,0.12); background:{row_bg};">
+                            <td style="padding:10px 8px;"><a href="{v['url']}" target="_blank"
+                               style="color:#9A7B3C; text-decoration:none; font-weight:500;"
+                               onmouseover="this.style.textDecoration='underline'"
+                               onmouseout="this.style.textDecoration='none'">{v['제목']}</a></td>
+                            <td style="padding:10px 8px; color:#8A8070;">{v['채널']}</td>
+                            <td style="padding:10px 8px; text-align:right; color:#F4EFE4;">{v['조회수']:,}</td>
+                            <td style="padding:10px 8px; text-align:right; color:#F4EFE4;">{v['좋아요']:,}</td>
+                            <td style="padding:10px 8px; text-align:right; color:#F4EFE4;">{v['댓글수']:,}</td>
+                        </tr>"""
+                    st.markdown(f"""
+                    <table style="width:100%; border-collapse:collapse; font-size:0.88em;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(138,128,112,0.3);">
+                                <th style="text-align:left; padding:10px 8px; color:#8A8070; font-weight:600;">제목</th>
+                                <th style="text-align:left; padding:10px 8px; color:#8A8070; font-weight:600;">채널</th>
+                                <th style="text-align:right; padding:10px 8px; color:#8A8070; font-weight:600;">조회수</th>
+                                <th style="text-align:right; padding:10px 8px; color:#8A8070; font-weight:600;">좋아요</th>
+                                <th style="text-align:right; padding:10px 8px; color:#8A8070; font-weight:600;">댓글수</th>
+                            </tr>
+                        </thead>
+                        <tbody style="font-size:0.95em;">{rows_html}</tbody>
+                    </table>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("YouTube 데이터를 가져올 수 없습니다. API 키를 확인해주세요.")
 
