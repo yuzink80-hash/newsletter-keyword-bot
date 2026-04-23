@@ -1,4 +1,5 @@
 import time
+import re
 import requests
 import hashlib
 import hmac
@@ -209,13 +210,25 @@ except KeyError:
 OPEN_CLIENT_ID = "P5roEfkWrGN1EJ85ifkh"
 OPEN_CLIENT_SECRET = "GFGZuG1x12"
 
+def normalize_korean(text: str) -> str:
+    """
+    Google Trends RSS가 '미국 의 해군 장관' 처럼 조사를 단어로 분리하는 문제 수정.
+    조사/어미 앞에 붙은 불필요한 공백을 제거한다.
+    """
+    particles = (
+        r'의|을|를|이|가|은|는|과|와|도|에|서|로|으로|만|까지|부터'
+        r'|보다|처럼|이다|라는|이라는|란|이란|적|들|에서|에게|한테|께|라고|이라고'
+    )
+    # 단어 뒤에 공백 + 조사가 오는 패턴 → 공백 제거
+    return re.sub(rf'\s+({particles})\b', r'\1', text).strip()
+
 @st.cache_data(ttl=600)
 def get_google_trends():
     url = "https://trends.google.com/trending/rss?geo=KR"
     try:
         res = requests.get(url, timeout=10)
         root = ET.fromstring(res.content)
-        return [item.find('title').text for item in root.findall('.//item')]
+        return [normalize_korean(item.find('title').text) for item in root.findall('.//item')]
     except: return []
 
 def get_datalab_trend(keyword):
@@ -254,23 +267,59 @@ def get_naver_autocomplete(keyword):
     except:
         return []
 
-def get_naver_rel_keywords(seeds):
-    if not seeds: return []
-    # ✅ 공백 제거(.replace(" ", "")) 버그 수정 — 원본 키워드 그대로 전달
-    base_kw = seeds[0]
-    autocomplete_kws = get_naver_autocomplete(base_kw)
-    all_seeds = list(dict.fromkeys([base_kw] + autocomplete_kws + seeds[1:]))
-    hint_str = ",".join(all_seeds[:5])  # 공백 제거 없이 그대로 사용
+def _call_naver_keyword_tool(hint_str: str):
+    """네이버 검색광고 키워드 도구 API 호출 — 결과 리스트 또는 None 반환."""
     timestamp = str(round(time.time() * 1000))
     message = timestamp + ".GET./keywordstool"
+    hash_obj = hmac.new(bytes(AD_SECRET_KEY, "utf-8"), bytes(message, "utf-8"), hashlib.sha256)
+    signature = base64.b64encode(hash_obj.digest()).decode("utf-8")
+    headers = {
+        "X-Timestamp": timestamp, "X-API-KEY": AD_API_KEY,
+        "X-Customer": AD_CUSTOMER_ID, "X-Signature": signature,
+    }
+    res = requests.get(
+        "https://api.searchad.naver.com/keywordstool",
+        params={"hintKeywords": hint_str, "showDetail": 1},
+        headers=headers, timeout=8
+    )
+    if res.status_code == 200:
+        items = res.json().get('keywordList', [])
+        return [{"keyword": i['relKeyword'],
+                 "volume": int(i.get('monthlyPcQcCnt', 0)) + int(i.get('monthlyMobileQcCnt', 0))}
+                for i in items]
+    return None   # 200 아니면 None (오류 구분용)
+
+def get_naver_rel_keywords(seeds):
+    """
+    연관 키워드 수집 — 3단계 폴백 전략.
+    1차: 전체 키워드 + 자동완성 5개 힌트로 API 호출
+    2차: 결과 0개면 조사 정규화 후 첫 명사(첫 단어)만 힌트로 재시도
+    3차: 그래도 0개면 None 반환 → 호출부에서 autocomplete fallback 진행
+    """
+    if not seeds: return []
+    base_kw = normalize_korean(seeds[0])  # 조사 띄어쓰기 버그 먼저 수정
+
+    # 1차 시도: 전체 키워드 + 자동완성
+    autocomplete_kws = get_naver_autocomplete(base_kw)
+    all_seeds = list(dict.fromkeys([base_kw] + autocomplete_kws + seeds[1:]))
+    hint_str = ",".join(all_seeds[:5])
     try:
-        hash_obj = hmac.new(bytes(AD_SECRET_KEY, "utf-8"), bytes(message, "utf-8"), hashlib.sha256)
-        signature = base64.b64encode(hash_obj.digest()).decode("utf-8")
-        headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_API_KEY, "X-Customer": AD_CUSTOMER_ID, "X-Signature": signature}
-        res = requests.get("https://api.searchad.naver.com/keywordstool", params={"hintKeywords": hint_str, "showDetail": 1}, headers=headers)
-        if res.status_code == 200:
-            return [{"keyword": i['relKeyword'], "volume": int(i.get('monthlyPcQcCnt', 0)) + int(i.get('monthlyMobileQcCnt', 0))} for i in res.json().get('keywordList', [])]
-    except: pass
+        result = _call_naver_keyword_tool(hint_str)
+        if result:  # 1개 이상 결과
+            return result
+    except Exception:
+        pass
+
+    # 2차 시도: 긴 문장형 키워드일 경우 첫 단어(핵심 명사)만으로 재시도
+    first_word = base_kw.split()[0] if ' ' in base_kw else base_kw
+    if first_word != base_kw:
+        try:
+            result = _call_naver_keyword_tool(first_word)
+            if result:
+                return result
+        except Exception:
+            pass
+
     return []
 
 def get_blog_doc_count(keyword):
@@ -396,8 +445,8 @@ is_clicked = st.button("분석 시작하기", type="primary", use_container_widt
 
 if is_clicked or st.session_state.auto_run:
     st.session_state.auto_run = False 
-    seeds = [k.strip() for k in st.session_state.current_search.split(",") if k.strip()] if st.session_state.current_search.strip() else current_trends
-        
+    seeds = [normalize_korean(k.strip()) for k in st.session_state.current_search.split(",") if k.strip()] if st.session_state.current_search.strip() else current_trends
+
     if seeds:
         target_kw = seeds[0]
         trend_df = get_datalab_trend(target_kw)
