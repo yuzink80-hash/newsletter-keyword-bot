@@ -246,14 +246,30 @@ if is_clicked or st.session_state.auto_run:
             with col_chart1:
                 st.markdown("##### 📅 월별 검색 비율 (%)")
                 month_group = trend_df.groupby(trend_df.index.month).mean()
-                month_group.index = [f"{m}월" for m in month_group.index]
-                st.bar_chart((month_group / month_group.sum()) * 100, color="#60A5FA")
+                month_pct = (month_group / month_group.sum() * 100).iloc[:, 0].round(1)
+                month_df = pd.DataFrame({"월": [f"{m}월" for m in month_pct.index], "비율(%)": month_pct.values})
+                st.altair_chart(
+                    alt.Chart(month_df).mark_bar(color="#60A5FA").encode(
+                        x=alt.X("월:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+                        y=alt.Y("비율(%):Q", title="비율 (%)"),
+                        tooltip=["월", "비율(%)"]
+                    ).properties(height=250),
+                    use_container_width=True
+                )
             with col_chart2:
                 st.markdown("##### 📆 요일별 검색 비율 (%)")
                 dow_group = trend_df.groupby(trend_df.index.dayofweek).mean()
                 dow_map = {0:"월", 1:"화", 2:"수", 3:"목", 4:"금", 5:"토", 6:"일"}
-                dow_group.index = [dow_map[d] for d in dow_group.index]
-                st.bar_chart((dow_group / dow_group.sum()) * 100, color="#60A5FA")
+                dow_pct = (dow_group / dow_group.sum() * 100).iloc[:, 0].round(1)
+                dow_df = pd.DataFrame({"요일": [dow_map[d] for d in dow_pct.index], "비율(%)": dow_pct.values})
+                st.altair_chart(
+                    alt.Chart(dow_df).mark_bar(color="#60A5FA").encode(
+                        x=alt.X("요일:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+                        y=alt.Y("비율(%):Q", title="비율 (%)"),
+                        tooltip=["요일", "비율(%)"]
+                    ).properties(height=250),
+                    use_container_width=True
+                )
             
             st.divider()
             
@@ -263,10 +279,17 @@ if is_clicked or st.session_state.auto_run:
             # 추정치 데이터 가져오기
             age, male, female, issue, normal, com, info = generate_mock_demographics(target_kw)
             
-            # 3-1. 연령별 막대 그래프 (가로 꽉 차게)
+            # 3-1. 연령별 막대 그래프
             st.markdown("##### 👨‍👩‍👧‍👦 연령별 검색 비율")
-            age_df = pd.DataFrame({"연령대": ["10대", "20대", "30대", "40대", "50대 이상"], "비율(%)": age}).set_index("연령대")
-            st.bar_chart(age_df, color="#60A5FA")
+            age_df = pd.DataFrame({"연령대": ["10대", "20대", "30대", "40대", "50대 이상"], "비율(%)": age})
+            st.altair_chart(
+                alt.Chart(age_df).mark_bar(color="#60A5FA").encode(
+                    x=alt.X("연령대:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+                    y=alt.Y("비율(%):Q", title="비율 (%)"),
+                    tooltip=["연령대", "비율(%)"]
+                ).properties(height=250),
+                use_container_width=True
+            )
             
             # 3-2. 성별, 이슈성, 정보/상업성 파이(도넛) 차트 3개 나란히
             pie1, pie2, pie3 = st.columns(3)
