@@ -306,10 +306,10 @@ def _call_naver_keyword_tool(hint_str: str):
             total = pc + mob
             mob_pct = round(mob / total * 100, 1) if total > 0 else 0
             result.append({"keyword": i['relKeyword'], "volume": total, "mobile_pct": mob_pct})
+        st.session_state.pop('_ad_api_debug', None)  # 성공 시 디버그 메시지 제거
         return result
-    # 실패 시 상태코드·응답 내용을 session_state에 기록 (디버그용)
     st.session_state['_ad_api_debug'] = f"status={res.status_code} / {res.text[:200]}"
-    return None   # 200 아니면 None (오류 구분용)
+    return None
 
 def get_naver_rel_keywords(seeds):
     """
@@ -321,27 +321,13 @@ def get_naver_rel_keywords(seeds):
     if not seeds: return []
     base_kw = normalize_korean(seeds[0])  # 조사 띄어쓰기 버그 먼저 수정
 
-    # 1차 시도: 전체 키워드 + 자동완성
-    autocomplete_kws = get_naver_autocomplete(base_kw)
-    all_seeds = list(dict.fromkeys([base_kw] + autocomplete_kws + seeds[1:]))
-    # 빈 문자열·특수문자 제거 후 최대 5개로 제한
-    cleaned = [kw.strip() for kw in all_seeds if kw and kw.strip() and len(kw.strip()) >= 2]
-    hint_str = ",".join(cleaned[:5]) if cleaned else base_kw
+    # 1차 시도: base_kw 단독 (네이버 Ad API는 단일 키워드가 가장 안정적)
     try:
-        result = _call_naver_keyword_tool(hint_str)
-        if result:  # 1개 이상 결과
+        result = _call_naver_keyword_tool(base_kw)
+        if result:
             return result
     except Exception:
         pass
-
-    # 1.5차: 합성 hint 실패 시 base_kw 단독으로 재시도
-    if hint_str != base_kw:
-        try:
-            result = _call_naver_keyword_tool(base_kw)
-            if result:
-                return result
-        except Exception:
-            pass
 
     # 2차 시도: 긴 문장형 키워드일 경우 첫 단어(핵심 명사)만으로 재시도
     first_word = base_kw.split()[0] if ' ' in base_kw else base_kw
