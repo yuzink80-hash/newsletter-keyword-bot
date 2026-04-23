@@ -25,20 +25,80 @@ if 'auto_run' not in st.session_state:
 # ==========================================
 st.markdown("""
 <style>
+    /* ── 전체 배경 ── */
+    .stApp { background-color: #1C1A17; }
+    section[data-testid="stSidebar"] { background-color: #1C1A17; }
+
+    /* ── 검색창 ── */
     div[data-baseweb="input"] > div {
-        background-color: #ffffff !important; border-radius: 8px;
-        box-shadow: 0 0 15px rgba(0, 255, 150, 0.2); border: 1px solid rgba(0, 255, 150, 0.4);
+        background-color: #F4EFE4 !important;
+        border-radius: 8px;
+        box-shadow: 0 0 15px rgba(154, 123, 60, 0.25);
+        border: 1px solid rgba(154, 123, 60, 0.5) !important;
     }
-    div[data-baseweb="input"] input { color: #1E1E1E !important; -webkit-text-fill-color: #1E1E1E !important; }
-    div[data-baseweb="input"] input::placeholder { color: #A0A0A0 !important; -webkit-text-fill-color: #A0A0A0 !important; }
+    div[data-baseweb="input"] input {
+        color: #1C1A17 !important;
+        -webkit-text-fill-color: #1C1A17 !important;
+        font-weight: 500;
+    }
+    div[data-baseweb="input"] input::placeholder {
+        color: #8A8070 !important;
+        -webkit-text-fill-color: #8A8070 !important;
+    }
+
+    /* ── 트렌드 태그 ── */
     .trend-tag {
-        display: inline-block; padding: 6px 12px; margin: 5px 8px 15px 0;
-        border-radius: 20px; background-color: #1E1E1E; color: #E0E0E0;
-        font-size: 0.85em; font-weight: 500; transition: all 0.3s;
+        display: inline-block; padding: 6px 14px; margin: 5px 8px 15px 0;
+        border-radius: 20px; background-color: #2A2620;
+        border: 1px solid #8A8070;
+        color: #F4EFE4; font-size: 0.85em; font-weight: 500;
+        transition: all 0.25s ease;
     }
-    .trend-tag:hover { background-color: #00FF96; color: #000000; cursor: pointer; }
-    .sub-title { color: #00FF96; font-size: 1.1em; margin-bottom: 20px; }
-    .chart-box { border: 1px solid #333; padding: 15px; border-radius: 8px; background-color: #1E1E1E; }
+    .trend-tag:hover {
+        background-color: #9A7B3C;
+        border-color: #9A7B3C;
+        color: #F4EFE4;
+        cursor: pointer;
+    }
+
+    /* ── 서브타이틀 ── */
+    .sub-title { color: #9A7B3C; font-size: 1.1em; margin-bottom: 20px; }
+
+    /* ── 차트 박스 ── */
+    .chart-box {
+        border: 1px solid #8A8070;
+        padding: 15px; border-radius: 8px;
+        background-color: #2A2620;
+    }
+
+    /* ── 메트릭 카드 ── */
+    div[data-testid="metric-container"] {
+        background-color: #2A2620;
+        border: 1px solid #8A8070;
+        border-radius: 8px; padding: 12px;
+    }
+    div[data-testid="metric-container"] label { color: #8A8070 !important; }
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+        color: #F4EFE4 !important;
+    }
+
+    /* ── 버튼 ── */
+    div[data-testid="stButton"] button[kind="primary"] {
+        background-color: #9A7B3C !important;
+        border: none !important;
+        color: #F4EFE4 !important;
+        font-weight: 600;
+    }
+    div[data-testid="stButton"] button[kind="primary"]:hover {
+        background-color: #8A6B2C !important;
+    }
+
+    /* ── 구분선 ── */
+    hr { border-color: #8A8070 !important; opacity: 0.3; }
+
+    /* ── 헤더 텍스트 ── */
+    h1, h2, h3, h4 { color: #F4EFE4 !important; }
+    p, li, span { color: #F4EFE4; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -239,7 +299,7 @@ if is_clicked or st.session_state.auto_run:
             st.markdown(f"#### 📈 '{target_kw}' 최근 1년 검색 트렌드")
             monthly_trend = trend_df.groupby(trend_df.index.to_period('M')).mean()
             monthly_trend.index = monthly_trend.index.to_timestamp()
-            st.line_chart(monthly_trend, color="#00FF96")
+            st.line_chart(monthly_trend, color="#9A7B3C")
             
             # 2. 월별/요일별 차트
             col_chart1, col_chart2 = st.columns(2)
@@ -249,7 +309,7 @@ if is_clicked or st.session_state.auto_run:
                 month_pct = (month_group / month_group.sum() * 100).iloc[:, 0].round(1)
                 month_df = pd.DataFrame({"월": [f"{m}월" for m in month_pct.index], "비율(%)": month_pct.values})
                 st.altair_chart(
-                    alt.Chart(month_df).mark_bar(color="#60A5FA").encode(
+                    alt.Chart(month_df).mark_bar(color="#9A7B3C").encode(
                         x=alt.X("월:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
                         y=alt.Y("비율(%):Q", title="비율 (%)"),
                         tooltip=["월", "비율(%)"]
@@ -263,7 +323,7 @@ if is_clicked or st.session_state.auto_run:
                 dow_pct = (dow_group / dow_group.sum() * 100).iloc[:, 0].round(1)
                 dow_df = pd.DataFrame({"요일": [dow_map[d] for d in dow_pct.index], "비율(%)": dow_pct.values})
                 st.altair_chart(
-                    alt.Chart(dow_df).mark_bar(color="#60A5FA").encode(
+                    alt.Chart(dow_df).mark_bar(color="#9A7B3C").encode(
                         x=alt.X("요일:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
                         y=alt.Y("비율(%):Q", title="비율 (%)"),
                         tooltip=["요일", "비율(%)"]
@@ -283,7 +343,7 @@ if is_clicked or st.session_state.auto_run:
             st.markdown("##### 👨‍👩‍👧‍👦 연령별 검색 비율")
             age_df = pd.DataFrame({"연령대": ["10대", "20대", "30대", "40대", "50대 이상"], "비율(%)": age})
             st.altair_chart(
-                alt.Chart(age_df).mark_bar(color="#60A5FA").encode(
+                alt.Chart(age_df).mark_bar(color="#9A7B3C").encode(
                     x=alt.X("연령대:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
                     y=alt.Y("비율(%):Q", title="비율 (%)"),
                     tooltip=["연령대", "비율(%)"]
@@ -296,15 +356,15 @@ if is_clicked or st.session_state.auto_run:
             
             with pie1:
                 st.markdown("<p style='text-align:center; font-weight:bold;'>성별 검색 비율</p>", unsafe_allow_html=True)
-                st.altair_chart(draw_donut_chart({"여성": female, "남성": male}, ['#F87171', '#60A5FA']), use_container_width=True)
+                st.altair_chart(draw_donut_chart({"여성": female, "남성": male}, ['#8A8070', '#9A7B3C']), use_container_width=True)
                 
             with pie2:
                 st.markdown("<p style='text-align:center; font-weight:bold;'>이슈성 (트렌드 민감도)</p>", unsafe_allow_html=True)
-                st.altair_chart(draw_donut_chart({"이슈성": issue, "일반": normal}, ['#FB923C', '#FFEDD5']), use_container_width=True)
+                st.altair_chart(draw_donut_chart({"이슈성": issue, "일반": normal}, ['#9A7B3C', '#2A2620']), use_container_width=True)
                 
             with pie3:
                 st.markdown("<p style='text-align:center; font-weight:bold;'>정보성 vs 상업성</p>", unsafe_allow_html=True)
-                st.altair_chart(draw_donut_chart({"정보성": info, "상업성": com}, ['#34D399', '#60A5FA']), use_container_width=True)
+                st.altair_chart(draw_donut_chart({"정보성": info, "상업성": com}, ['#F4EFE4', '#8A8070']), use_container_width=True)
 
             st.divider()
 
