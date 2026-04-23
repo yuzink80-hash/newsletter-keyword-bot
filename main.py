@@ -8,7 +8,14 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import streamlit as st
 from datetime import datetime, timedelta
-import altair as alt  # 🌟 파이(도넛) 차트를 그리기 위한 도구 추가
+import altair as alt
+
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSPREAD_OK = True
+except ImportError:
+    GSPREAD_OK = False
 
 # 0. 스트림릿 화면 설정
 st.set_page_config(page_title="황금키워드 데이터랩", page_icon="📈", layout="wide")
@@ -20,6 +27,12 @@ if 'current_search' not in st.session_state:
     st.session_state.current_search = ""
 if 'auto_run' not in st.session_state:
     st.session_state.auto_run = False
+if 'categories' not in st.session_state:
+    st.session_state.categories = ["캠핑", "실내요리", "로컬", "재테크", "뷰티", "패션", "육아", "여행", "기타"]
+if 'last_df_sorted' not in st.session_state:
+    st.session_state.last_df_sorted = None
+if 'last_target_kw' not in st.session_state:
+    st.session_state.last_target_kw = ""
 
 # 검색바 텍스트 동기화: text_input 렌더링 전에 위젯 키를 업데이트해야 에러가 없음
 if st.session_state.get('_pending_search'):
@@ -284,9 +297,14 @@ def _call_naver_keyword_tool(hint_str: str):
     )
     if res.status_code == 200:
         items = res.json().get('keywordList', [])
-        return [{"keyword": i['relKeyword'],
-                 "volume": int(i.get('monthlyPcQcCnt', 0)) + int(i.get('monthlyMobileQcCnt', 0))}
-                for i in items]
+        result = []
+        for i in items:
+            pc  = int(i.get('monthlyPcQcCnt', 0))
+            mob = int(i.get('monthlyMobileQcCnt', 0))
+            total = pc + mob
+            mob_pct = round(mob / total * 100, 1) if total > 0 else 0
+            result.append({"keyword": i['relKeyword'], "volume": total, "mobile_pct": mob_pct})
+        return result
     return None   # 200 아니면 None (오류 구분용)
 
 def get_naver_rel_keywords(seeds):
@@ -329,6 +347,59 @@ def get_blog_doc_count(keyword):
         return res.json().get('total', 0) if res.status_code == 200 else 0
     except: pass
     return 0
+
+def save_to_archive(target_kw, category, df_sorted):
+    """
+    구글 시트에 한 행으로 저장.
+    연관 키워드는 쉼표 구분 한 셀에 모두 담음.
+    """
+    if not GSPREAD_OK:
+        st.error("gspread 라이브러리가 설치되어 있지 않습니다. requirements.txt를 확인해주세요.")
+        return False
+    try:
+        gsheet_url = st.secrets.get("GSHEET_URL", "")
+        sa_info    = dict(st.secrets["gcp_service_account"])
+    except Exception:
+        st.warning("⚙️ 구글 시트 연동 설정이 필요합니다.\nStreamlit Cloud → Settings → Secrets에 `GSHEET_URL`과 `[gcp_service_account]`를 등록해주세요.")
+        return False
+    try:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets",
+                  "https://www.googleapis.com/auth/drive"]
+        creds  = Credentials.from_service_account_info(sa_info, scopes=scopes)
+        client = gspread.authorize(creds)
+        ws     = client.open_by_url(gsheet_url).sheet1
+
+        # 메인 키워드 행 (없으면 첫 번째 행)
+        main_row = df_sorted[df_sorted['키워드'] == target_kw]
+        ref = main_row.iloc[0] if not main_row.empty else df_sorted.iloc[0]
+
+        total_vol = int(ref['월간검색량'])
+        blog_cnt  = int(ref['블로그문서수'])
+        comp      = float(ref['경쟁강도'])
+        mob_pct   = f"{ref.get('모바일비율', 0):.0f}%"
+        target_demo = str(ref.get('타겟추정', ''))
+
+        # 연관 키워드 전체를 쉼표 구분 한 셀로
+        rel_kws = ", ".join(df_sorted['키워드'].tolist())
+
+        new_row = [
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            category,
+            target_kw,
+            rel_kws,
+            total_vol,
+            blog_cnt,
+            comp,
+            mob_pct,
+            target_demo,
+            "대기",
+            ""
+        ]
+        ws.append_row(new_row, value_input_option='USER_ENTERED')
+        return True
+    except Exception as e:
+        st.error(f"저장 실패: {e}")
+        return False
 
 @st.cache_data(ttl=600)
 def get_naver_shopping(keyword, display=100):
@@ -455,8 +526,28 @@ with col2:
     def update_search():
         st.session_state.current_search = st.session_state.search_input_widget
         st.session_state.auto_run = False
-        
     user_keyword = st.text_input("검색어", value=st.session_state.current_search, key="search_input_widget", placeholder="분석할 키워드 (예: 영등포 로컬, 문래창작촌)", label_visibility="collapsed", on_change=update_search)
+
+# ── 카테고리 선택 ──────────────────────────────────────
+_cat_options = st.session_state.categories + ["✚ 새 카테고리 추가"]
+cat_col1, cat_col2 = st.columns([5, 2])
+with cat_col1:
+    category_choice = st.selectbox("카테고리", _cat_options, label_visibility="collapsed", key="category_select")
+with cat_col2:
+    if category_choice == "✚ 새 카테고리 추가":
+        new_cat_val = st.text_input("새 카테고리", label_visibility="collapsed", placeholder="카테고리명 입력")
+        if st.button("추가", key="add_cat_btn") and new_cat_val:
+            if new_cat_val not in st.session_state.categories:
+                st.session_state.categories.append(new_cat_val)
+            st.rerun()
+    else:
+        st.caption(f"저장 카테고리: **{category_choice}**")
+
+# 실제로 사용할 카테고리 값 결정
+_final_category = (
+    category_choice if category_choice != "✚ 새 카테고리 추가"
+    else (st.session_state.categories[-1] if st.session_state.categories else "기타")
+)
 
 current_trends = get_google_trends()
 if current_trends:
@@ -776,11 +867,29 @@ if is_clicked or st.session_state.auto_run:
             for idx, item in enumerate(df_top50.to_dict('records')):
                 doc = get_blog_doc_count(item['keyword'])
                 comp = round(doc / item['volume'], 2) if item['volume'] > 0 else 0
-                final_results.append({"키워드": item['keyword'], "월간검색량": item['volume'], "블로그문서수": doc, "경쟁강도": comp})
+                final_results.append({
+                    "키워드": item['keyword'],
+                    "월간검색량": item['volume'],
+                    "블로그문서수": doc,
+                    "경쟁강도": comp,
+                    "모바일비율": item.get('mobile_pct', 0),
+                })
                 my_bar.progress((idx + 1) / total_items, text="블로그 문서 수 수집 중...")
 
+            # 타겟 추정 (hash 기반 추정치)
+            age, male, female, *_ = generate_mock_demographics(target_kw)
+            dom_gender = "여성" if female > male else "남성"
+            age_labels = ["10대", "20대", "30대", "40대", "50대 이상"]
+            dom_age = age_labels[age.index(max(age))]
+            target_demo_str = f"{dom_gender} {dom_age}"
+
             df_final = pd.DataFrame(final_results)
+            df_final['타겟추정'] = target_demo_str
             df_sorted = df_final.sort_values(by=["경쟁강도", "월간검색량"], ascending=[True, False]).reset_index(drop=True)
+
+            # 세션에 저장 (save_to_archive 버튼에서 참조)
+            st.session_state.last_df_sorted  = df_sorted
+            st.session_state.last_target_kw  = target_kw
 
             st.markdown(f"""
             <div class="section-card">
@@ -813,5 +922,24 @@ if is_clicked or st.session_state.auto_run:
                 c3.markdown(f'<div style="padding:6px 0; color:#8A8070; font-size:0.9em;">{row["경쟁강도"]}</div>', unsafe_allow_html=True)
         else:
             st.warning("연관 검색어를 찾지 못했습니다. 다른 키워드로 시도해보세요.")
+
+        # ── 아카이브 저장 버튼 ─────────────────────────────
+        st.divider()
+        save_col1, save_col2 = st.columns([3, 1])
+        with save_col1:
+            st.caption(f"카테고리: **{_final_category}** · 키워드: **{st.session_state.last_target_kw}** · 연관 {len(st.session_state.last_df_sorted) if st.session_state.last_df_sorted is not None else 0}개")
+        with save_col2:
+            if st.button("💾 구글 시트에 저장", key="save_archive_btn", use_container_width=True):
+                if st.session_state.last_df_sorted is not None:
+                    ok = save_to_archive(
+                        st.session_state.last_target_kw,
+                        _final_category,
+                        st.session_state.last_df_sorted
+                    )
+                    if ok:
+                        st.success(f"✅ '{st.session_state.last_target_kw}' 분석 결과를 구글 시트에 저장했습니다!")
+                else:
+                    st.warning("먼저 분석을 실행해주세요.")
+
     else:
         st.error("데이터를 수집할 수 없습니다.")
