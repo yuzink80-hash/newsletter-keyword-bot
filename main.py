@@ -135,16 +135,19 @@ st.markdown("""
     /* ── 트렌드 태그 버튼 (Secondary) ── */
     div[data-testid="stButton"] button[kind="secondary"] {
         background-color: #232018 !important;
-        border: 1px solid rgba(138, 128, 112, 0.4) !important;
+        border: 1px solid rgba(138, 128, 112, 0.35) !important;
         border-radius: 20px !important;
         color: #C8BFB0 !important;
-        font-size: 0.82em !important;
+        font-size: 0.68em !important;
         font-weight: 500 !important;
-        padding: 4px 10px !important;
-        transition: all 0.25s ease !important;
+        padding: 2px 4px !important;
+        line-height: 1.4 !important;
+        transition: all 0.2s ease !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
+        min-height: unset !important;
+        height: 32px !important;
     }
     div[data-testid="stButton"] button[kind="secondary"]:hover {
         background-color: #9A7B3C !important;
@@ -344,15 +347,13 @@ with col2:
 current_trends = get_google_trends()
 if current_trends:
     top20 = current_trends[:20]
-    for row_start in range(0, len(top20), 10):
-        row_kws = top20[row_start:row_start + 10]
-        row_cols = st.columns(len(row_kws))
-        for i, kw in enumerate(row_kws):
-            with row_cols[i]:
-                if st.button(f"#{kw}", key=f"trend_tag_{row_start + i}", use_container_width=True):
-                    st.session_state.current_search = kw
-                    st.session_state.auto_run = True
-                    st.rerun()
+    trend_cols = st.columns(len(top20))
+    for i, kw in enumerate(top20):
+        with trend_cols[i]:
+            if st.button(f"#{kw}", key=f"trend_tag_{i}", use_container_width=True):
+                st.session_state.current_search = kw
+                st.session_state.auto_run = True
+                st.rerun()
 
 is_clicked = st.button("분석 시작하기", type="primary", use_container_width=True)
 
