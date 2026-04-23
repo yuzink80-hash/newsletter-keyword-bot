@@ -378,31 +378,59 @@ if is_clicked or st.session_state.auto_run:
             
             # 2. 월별/요일별 차트
             col_chart1, col_chart2 = st.columns(2)
+
+            axis_cfg = alt.Axis(
+                labelAngle=0,
+                title=None,
+                labelColor="#8A8070",
+                tickColor="transparent",
+                domainColor="rgba(138,128,112,0.25)"
+            )
+            y_axis_cfg = alt.Axis(
+                title=None,
+                labelExpr='datum.value + "%"',
+                labelColor="#8A8070",
+                gridColor="rgba(138,128,112,0.12)",
+                domainColor="transparent",
+                tickColor="transparent"
+            )
+
             with col_chart1:
-                st.markdown("##### 📅 월별 검색 비율 (%)")
+                st.markdown("##### 📅 월별 검색 비율")
                 month_group = trend_df.groupby(trend_df.index.month).mean()
                 month_pct = (month_group / month_group.sum() * 100).iloc[:, 0].round(1)
                 month_df = pd.DataFrame({"월": [f"{m}월" for m in month_pct.index], "비율(%)": month_pct.values})
                 st.altair_chart(
-                    alt.Chart(month_df).mark_bar(color="#9A7B3C").encode(
-                        x=alt.X("월:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
-                        y=alt.Y("비율(%):Q", title="비율 (%)"),
-                        tooltip=["월", "비율(%)"]
-                    ).properties(height=250),
+                    alt.Chart(month_df)
+                    .mark_bar(color="#9A7B3C", cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                    .encode(
+                        x=alt.X("월:N", sort=None, axis=axis_cfg),
+                        y=alt.Y("비율(%):Q", axis=y_axis_cfg),
+                        tooltip=[alt.Tooltip("월:N"), alt.Tooltip("비율(%):Q", format=".1f", title="비율(%)")]
+                    )
+                    .properties(height=260)
+                    .configure_view(strokeWidth=0, fill="#1C1A17")
+                    .configure(background="#1C1A17"),
                     use_container_width=True
                 )
+
             with col_chart2:
-                st.markdown("##### 📆 요일별 검색 비율 (%)")
+                st.markdown("##### 📆 요일별 검색 비율")
                 dow_group = trend_df.groupby(trend_df.index.dayofweek).mean()
                 dow_map = {0:"월", 1:"화", 2:"수", 3:"목", 4:"금", 5:"토", 6:"일"}
                 dow_pct = (dow_group / dow_group.sum() * 100).iloc[:, 0].round(1)
                 dow_df = pd.DataFrame({"요일": [dow_map[d] for d in dow_pct.index], "비율(%)": dow_pct.values})
                 st.altair_chart(
-                    alt.Chart(dow_df).mark_bar(color="#9A7B3C").encode(
-                        x=alt.X("요일:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
-                        y=alt.Y("비율(%):Q", title="비율 (%)"),
-                        tooltip=["요일", "비율(%)"]
-                    ).properties(height=250),
+                    alt.Chart(dow_df)
+                    .mark_bar(color="#9A7B3C", cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                    .encode(
+                        x=alt.X("요일:N", sort=None, axis=axis_cfg),
+                        y=alt.Y("비율(%):Q", axis=y_axis_cfg),
+                        tooltip=[alt.Tooltip("요일:N"), alt.Tooltip("비율(%):Q", format=".1f", title="비율(%)")]
+                    )
+                    .properties(height=260)
+                    .configure_view(strokeWidth=0, fill="#1C1A17")
+                    .configure(background="#1C1A17"),
                     use_container_width=True
                 )
             
@@ -422,11 +450,16 @@ if is_clicked or st.session_state.auto_run:
             st.markdown("##### 👨‍👩‍👧‍👦 연령별 검색 비율")
             age_df = pd.DataFrame({"연령대": ["10대", "20대", "30대", "40대", "50대 이상"], "비율(%)": age})
             st.altair_chart(
-                alt.Chart(age_df).mark_bar(color="#9A7B3C").encode(
-                    x=alt.X("연령대:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
-                    y=alt.Y("비율(%):Q", title="비율 (%)"),
-                    tooltip=["연령대", "비율(%)"]
-                ).properties(height=250),
+                alt.Chart(age_df)
+                .mark_bar(color="#9A7B3C", cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                .encode(
+                    x=alt.X("연령대:N", sort=None, axis=axis_cfg),
+                    y=alt.Y("비율(%):Q", axis=y_axis_cfg),
+                    tooltip=[alt.Tooltip("연령대:N"), alt.Tooltip("비율(%):Q", format=".1f", title="비율(%)")]
+                )
+                .properties(height=260)
+                .configure_view(strokeWidth=0, fill="#1C1A17")
+                .configure(background="#1C1A17"),
                 use_container_width=True
             )
             
