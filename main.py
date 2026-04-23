@@ -343,13 +343,16 @@ with col2:
 
 current_trends = get_google_trends()
 if current_trends:
-    trend_cols = st.columns(len(current_trends[:6]))
-    for i, kw in enumerate(current_trends[:6]):
-        with trend_cols[i]:
-            if st.button(f"#{kw}", key=f"trend_tag_{i}", use_container_width=True):
-                st.session_state.current_search = kw
-                st.session_state.auto_run = True
-                st.rerun()
+    top20 = current_trends[:20]
+    for row_start in range(0, len(top20), 10):
+        row_kws = top20[row_start:row_start + 10]
+        row_cols = st.columns(len(row_kws))
+        for i, kw in enumerate(row_kws):
+            with row_cols[i]:
+                if st.button(f"#{kw}", key=f"trend_tag_{row_start + i}", use_container_width=True):
+                    st.session_state.current_search = kw
+                    st.session_state.auto_run = True
+                    st.rerun()
 
 is_clicked = st.button("분석 시작하기", type="primary", use_container_width=True)
 
