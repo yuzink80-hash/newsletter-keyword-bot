@@ -49,6 +49,7 @@ try:
     AD_API_KEY = st.secrets["NAVER_AD_ACCESS_LICENSE"]
     AD_SECRET_KEY = st.secrets["NAVER_AD_SECRET_KEY"]
     AD_CUSTOMER_ID = str(st.secrets["NAVER_AD_CUSTOMER_ID"])
+    YOUTUBE_API_KEY = st.secrets.get("YOUTUBE_API_KEY", "")
 except KeyError:
     st.error("오른쪽 아래 Manage app -> Settings -> Secrets에 네이버 API 키를 먼저 넣어주세요!")
     st.stop()
@@ -127,6 +128,51 @@ def generate_mock_demographics(keyword):
     info_pct = 100 - com_pct
     
     return age_pct, male_pct, female_pct, issue_pct, normal_pct, com_pct, info_pct
+
+@st.cache_data(ttl=600)
+def get_youtube_stats(keyword):
+    """YouTube Data API v3로 키워드 관련 영상 수집 및 경쟁 분석"""
+    if not YOUTUBE_API_KEY:
+        return None, []
+    try:
+        # 1단계: 키워드로 영상 검색
+        search_res = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params={
+                "q": keyword, "part": "snippet", "type": "video",
+                "maxResults": 10, "regionCode": "KR",
+                "relevanceLanguage": "ko", "key": YOUTUBE_API_KEY
+            }
+        )
+        search_data = search_res.json()
+        if "error" in search_data:
+            return None, []
+
+        total_results = search_data.get("pageInfo", {}).get("totalResults", 0)
+        items = search_data.get("items", [])
+        if not items:
+            return total_results, []
+
+        # 2단계: 영상 ID로 통계 조회
+        video_ids = [item["id"]["videoId"] for item in items]
+        stats_res = requests.get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params={"id": ",".join(video_ids), "part": "statistics,snippet", "key": YOUTUBE_API_KEY}
+        )
+        videos = []
+        for item in stats_res.json().get("items", []):
+            stat = item.get("statistics", {})
+            snip = item.get("snippet", {})
+            videos.append({
+                "제목": snip.get("title", ""),
+                "채널": snip.get("channelTitle", ""),
+                "조회수": int(stat.get("viewCount", 0)),
+                "좋아요": int(stat.get("likeCount", 0)),
+                "댓글수": int(stat.get("commentCount", 0)),
+            })
+        return total_results, sorted(videos, key=lambda x: x["조회수"], reverse=True)
+    except:
+        return None, []
 
 # 도넛 차트를 그리는 함수
 def draw_donut_chart(data_dict, color_range):
@@ -219,7 +265,33 @@ if is_clicked or st.session_state.auto_run:
                 st.altair_chart(draw_donut_chart({"정보성": info, "상업성": com}, ['#34D399', '#60A5FA']), use_container_width=True)
 
             st.divider()
-            
+
+            # 🎥 4. YouTube 경쟁 분석
+            st.markdown(f"#### 🎥 '{target_kw}' YouTube 경쟁 분석")
+            with st.spinner("YouTube 데이터를 불러오는 중..."):
+                yt_total, yt_videos = get_youtube_stats(target_kw)
+
+            if yt_total is not None:
+                avg_views = sum(v["조회수"] for v in yt_videos) // len(yt_videos) if yt_videos else 0
+                yt_competition = round(yt_total / 1000, 1)  # 영상 수 기반 경쟁 지표
+
+                m1, m2, m3 = st.columns(3)
+                m1.metric("📹 유튜브 영상 수", f"{yt_total:,}개", help="해당 키워드로 검색되는 전체 유튜브 영상 수")
+                m2.metric("👁️ 상위 10개 평균 조회수", f"{avg_views:,}회", help="상위 노출 영상들의 평균 조회수")
+                m3.metric("⚔️ 유튜브 경쟁 지수", f"{yt_competition}K", help="영상 수 ÷ 1,000 — 낮을수록 진입 유리")
+
+                if yt_videos:
+                    st.markdown("##### 🏆 상위 노출 영상 TOP 10")
+                    df_yt = pd.DataFrame(yt_videos)
+                    df_yt["조회수"] = df_yt["조회수"].apply(lambda x: f"{x:,}")
+                    df_yt["좋아요"] = df_yt["좋아요"].apply(lambda x: f"{x:,}")
+                    df_yt["댓글수"] = df_yt["댓글수"].apply(lambda x: f"{x:,}")
+                    st.dataframe(df_yt, use_container_width=True, hide_index=True)
+            else:
+                st.info("YouTube 데이터를 가져올 수 없습니다. API 키를 확인해주세요.")
+
+            st.divider()
+
         with st.spinner("네이버 연관 검색어와 경쟁 강도를 분석 중입니다..."):
             raw_keywords = get_naver_rel_keywords(seeds)
         
