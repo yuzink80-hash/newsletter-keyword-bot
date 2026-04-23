@@ -377,15 +377,19 @@ def save_to_archive(target_kw, category, df_sorted):
         client = gspread.authorize(creds)
         ws     = client.open_by_url(gsheet_url).sheet1
 
-        # 메인 키워드 행 (없으면 첫 번째 행)
+        # 대표 키워드 행 우선 탐색, 없으면 검색량 최대 행 사용
         main_row = df_sorted[df_sorted['키워드'] == target_kw]
-        ref = main_row.iloc[0] if not main_row.empty else df_sorted.iloc[0]
+        if not main_row.empty:
+            ref = main_row.iloc[0]
+        else:
+            ref = df_sorted.loc[df_sorted['월간검색량'].idxmax()]
 
-        total_vol = int(ref['월간검색량'])
-        blog_cnt  = int(ref['블로그문서수'])
-        comp      = float(ref['경쟁강도'])
-        mob_pct   = f"{ref.get('모바일비율', 0):.0f}%"
-        target_demo = str(ref.get('타겟추정', ''))
+        total_vol   = int(df_sorted['월간검색량'].sum())          # 전체 연관 키워드 합산 검색량
+        blog_cnt    = int(ref['블로그문서수'])
+        comp        = round(float(ref['경쟁강도']), 2)
+        mob_val     = df_sorted['모바일비율'].mean() if '모바일비율' in df_sorted.columns else 0
+        mob_pct     = f"{mob_val:.0f}%"
+        target_demo = str(ref['타겟추정']) if '타겟추정' in df_sorted.columns else ''
 
         # 연관 키워드 전체를 쉼표 구분 한 셀로
         rel_kws = ", ".join(df_sorted['키워드'].tolist())
