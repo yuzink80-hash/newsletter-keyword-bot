@@ -118,7 +118,7 @@ st.markdown("""
         border: 1px solid rgba(138,128,112,0.18) !important;
     }
 
-    /* ── 버튼 ── */
+    /* ── 분석 버튼 (Primary) ── */
     div[data-testid="stButton"] button[kind="primary"] {
         background-color: #9A7B3C !important;
         border: none !important;
@@ -130,6 +130,26 @@ st.markdown("""
     div[data-testid="stButton"] button[kind="primary"]:hover {
         background-color: #7A6030 !important;
         box-shadow: 0 4px 12px rgba(154,123,60,0.3) !important;
+    }
+
+    /* ── 트렌드 태그 버튼 (Secondary) ── */
+    div[data-testid="stButton"] button[kind="secondary"] {
+        background-color: #232018 !important;
+        border: 1px solid rgba(138, 128, 112, 0.4) !important;
+        border-radius: 20px !important;
+        color: #C8BFB0 !important;
+        font-size: 0.82em !important;
+        font-weight: 500 !important;
+        padding: 4px 10px !important;
+        transition: all 0.25s ease !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    div[data-testid="stButton"] button[kind="secondary"]:hover {
+        background-color: #9A7B3C !important;
+        border-color: #9A7B3C !important;
+        color: #F4EFE4 !important;
     }
 
     /* ── 구분선 ── */
@@ -323,8 +343,13 @@ with col2:
 
 current_trends = get_google_trends()
 if current_trends:
-    tags_html = "".join([f'<span class="trend-tag">#{kw}</span>' for kw in current_trends[:6]])
-    st.markdown(tags_html + '<span class="trend-tag" style="background:none; color:#00FF96;">트렌드 더 보기 →</span>', unsafe_allow_html=True)
+    trend_cols = st.columns(len(current_trends[:6]))
+    for i, kw in enumerate(current_trends[:6]):
+        with trend_cols[i]:
+            if st.button(f"#{kw}", key=f"trend_tag_{i}", use_container_width=True):
+                st.session_state.current_search = kw
+                st.session_state.auto_run = True
+                st.rerun()
 
 is_clicked = st.button("분석 시작하기", type="primary", use_container_width=True)
 
