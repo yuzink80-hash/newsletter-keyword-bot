@@ -608,6 +608,9 @@ def show_realtime_trends(trends):
         cloud_kws = get_trends_for_cloud(30)   # 30개 보장
         total_kws = max(len(cloud_kws), 1)
 
+        # 검색량 내림차순 정렬 — 1위 키워드가 JS에서 index 0이 되어 가운데 배치됨
+        cloud_kws = sorted(cloud_kws, key=lambda kw: vol_map.get(kw, 0), reverse=True)
+
         kw_data = []
         for idx, kw in enumerate(cloud_kws):
             vol = vol_map.get(kw, 0)
@@ -667,19 +670,25 @@ items.forEach(d => {{
   const eh = el.offsetHeight + 2;
   let ox = 0, oy = 0;
 
-  for (let i = 0; i < 400; i++) {{
-    const tx = Math.random() * Math.max(1, W - ew);
-    const ty = Math.random() * Math.max(1, H - eh);
-    let ok = true;
-    for (const [bx,by,bw,bh] of placed) {{
-      if (!(tx+ew+PAD<bx||tx>bx+bw+PAD||ty+eh+PAD<by||ty>by+bh+PAD)){{ok=false;break;}}
-    }}
-    if (ok) {{ ox=tx; oy=ty; break; }}
-    if (i===399) {{
-      const sm = Math.max(11, d.spx*0.78);
-      el.style.fontSize = sm+'px';
-      ox = Math.random()*Math.max(1,W-el.offsetWidth-4);
-      oy = Math.random()*Math.max(1,H-el.offsetHeight-2);
+  // 검색량 1위(index 0)는 중앙에 배치
+  if (placed.length === 0) {{
+    ox = Math.max(0, (W - ew) / 2);
+    oy = Math.max(0, (H - eh) / 2);
+  }} else {{
+    for (let i = 0; i < 400; i++) {{
+      const tx = Math.random() * Math.max(1, W - ew);
+      const ty = Math.random() * Math.max(1, H - eh);
+      let ok = true;
+      for (const [bx,by,bw,bh] of placed) {{
+        if (!(tx+ew+PAD<bx||tx>bx+bw+PAD||ty+eh+PAD<by||ty>by+bh+PAD)){{ok=false;break;}}
+      }}
+      if (ok) {{ ox=tx; oy=ty; break; }}
+      if (i===399) {{
+        const sm = Math.max(11, d.spx*0.78);
+        el.style.fontSize = sm+'px';
+        ox = Math.random()*Math.max(1,W-el.offsetWidth-4);
+        oy = Math.random()*Math.max(1,H-el.offsetHeight-2);
+      }}
     }}
   }}
   placed.push([ox, oy, el.offsetWidth, el.offsetHeight]);
@@ -731,7 +740,15 @@ function onMove(cx, cy) {{
   drag.el.style.top  = drag.y+'px';
 }}
 function onUp() {{
-  if (drag) {{ drag.dragging=false; drag.el.style.zIndex=''; drag=null; }}
+  if (drag) {{
+    // 드롭 위치를 새 원위치로 고정 — 스프링이 이 위치를 기준으로 작동
+    drag.ox = drag.x;
+    drag.oy = drag.y;
+    drag.vx = 0; drag.vy = 0;
+    drag.dragging = false;
+    drag.el.style.zIndex = '';
+    drag = null;
+  }}
 }}
 
 document.addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
