@@ -527,18 +527,33 @@ def draw_donut_chart(data_dict, color_range):
 
 @st.cache_data(ttl=1800)
 def get_trend_volume(kw):
-    """실시간 트렌드 키워드의 월간검색량을 Naver Ad API로 조회"""
+    """실시간 트렌드 키워드 월간검색량 — session_state 접근 없이 직접 API 호출"""
     try:
-        result = _call_naver_keyword_tool(kw)
-        if not result:
+        timestamp = str(round(time.time() * 1000))
+        message   = timestamp + ".GET./keywordstool"
+        sig       = base64.b64encode(
+            hmac.new(bytes(AD_SECRET_KEY, "utf-8"), bytes(message, "utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+        headers = {"X-Timestamp": timestamp, "X-API-KEY": AD_API_KEY,
+                   "X-Customer": AD_CUSTOMER_ID, "X-Signature": sig}
+        res = requests.get(
+            "https://api.searchad.naver.com/keywordstool",
+            params={"hintKeywords": kw, "showDetail": 1},
+            headers=headers, timeout=8
+        )
+        if res.status_code != 200:
             return 0
-        # 정확히 일치하는 키워드 우선, 없으면 첫 번째 항목
-        for item in result:
-            if item['keyword'] == kw:
-                return item['volume']
-        return result[0]['volume'] if result else 0
+        items = res.json().get('keywordList', [])
+        for item in items:
+            pc = int(item.get('monthlyPcQcCnt', 0))
+            mob = int(item.get('monthlyMobileQcCnt', 0))
+            if item.get('relKeyword') == kw:
+                return pc + mob
+        if items:
+            return int(items[0].get('monthlyPcQcCnt', 0)) + int(items[0].get('monthlyMobileQcCnt', 0))
     except Exception:
-        return 0
+        pass
+    return 0
 
 def show_realtime_trends(trends):
     """실시간 검색어 시각화 페이지"""
@@ -550,7 +565,7 @@ def show_realtime_trends(trends):
     <div class="section-card">
         <div class="section-card-title">REAL-TIME TRENDS</div>
         <div class="section-card-heading">🔥 실시간 인기 급상승 키워드</div>
-        <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 키워드 클릭 시 검색 분석으로 이동합니다</div>
+        <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 키워드 클릭 시 네이버 뉴스로 이동합니다</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -559,51 +574,91 @@ def show_realtime_trends(trends):
     with left_col:
         st.markdown("#### 🌐 키워드 클라우드")
 
-        import hashlib
-        colors = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
+        # ── 픽셀 기반 겹침 방지 배치 알고리즘 ──────────────────
+        CW, CH = 640, 460          # 컨테이너 크기(px)
+        PAD    = 6                 # 단어 사이 최소 여백
+        COLORS = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
+        cloud_kws = trends[:30]    # 최대 30개
+        total_kws = len(cloud_kws)
 
-        # 해시 기반으로 안정적인 랜덤 좌표 생성 + 겹침 최소화
-        placed = []
-        positions = []
-        for idx, kw in enumerate(trends[:25]):
-            h = int(hashlib.md5((kw + str(idx)).encode()).hexdigest(), 16)
-            size = round(2.5 - (idx / 25) * 1.6, 2)
-            char_w = size * len(kw) * 14   # 대략적인 픽셀 너비
-            char_h = size * 20
+        placed    = []   # (x, y, w, h) in px
+        positions = []   # (kw, x_px, y_px, size_px, color)
 
-            # 겹침 피하기: 최대 20회 시도
-            for attempt in range(20):
-                seed = h + attempt * 7919
-                x = (seed % 68) + 2          # 2~70%
-                y = ((seed >> 10) % 72) + 4  # 4~76%
-                # 이미 배치된 항목과 충돌 검사
-                overlap = False
-                for px, py, pw, ph in placed:
-                    if abs(x - px) < (pw / 8 + char_w / 8) and abs(y - py) < (ph / 4 + char_h / 4):
-                        overlap = True
-                        break
+        for idx, kw in enumerate(cloud_kws):
+            size_px  = max(13, int(44 - idx * (44 - 13) / total_kws))
+            # 한글 글자 너비 ≈ size_px * 1.05, 영문 ≈ size_px * 0.6
+            char_w   = size_px * (1.05 if any('\uAC00' <= c <= '\uD7A3' for c in kw) else 0.62)
+            word_w   = int(len(kw) * char_w) + 8
+            word_h   = int(size_px * 1.35)
+            color    = COLORS[min(idx // 5, len(COLORS) - 1)]
+            fw       = "700" if size_px >= 26 else "500"
+
+            # 해시 기반 시드로 시도 위치 생성 (재현 가능한 랜덤)
+            h        = int(hashlib.md5((kw + str(idx)).encode()).hexdigest(), 16)
+            placed_ok = False
+            for attempt in range(60):
+                seed  = (h + attempt * 48271) & 0xFFFFFFFF
+                x     = seed % max(1, CW - word_w)
+                y     = (seed >> 12) % max(1, CH - word_h)
+                # 겹침 검사 (PAD 여백 포함)
+                overlap = any(
+                    not (x + word_w + PAD < px or x > px + pw + PAD or
+                         y + word_h + PAD < py or y > py + ph + PAD)
+                    for px, py, pw, ph in placed
+                )
                 if not overlap:
+                    placed.append((x, y, word_w, word_h))
+                    positions.append((kw, x, y, size_px, color, fw))
+                    placed_ok = True
                     break
-            placed.append((x, y, char_w, char_h))
-            positions.append((kw, x, y, size, colors[min(idx // 4, 5)]))
+            if not placed_ok:
+                # 60회 실패 시 작은 글자로 강제 배치
+                size_sm = max(11, size_px - 8)
+                word_w2 = int(len(kw) * size_sm * 0.95) + 4
+                word_h2 = int(size_sm * 1.35)
+                x = (h * 13 % max(1, CW - word_w2))
+                y = (h * 7  % max(1, CH - word_h2))
+                placed.append((x, y, word_w2, word_h2))
+                positions.append((kw, x, y, size_sm, COLORS[-1], "400"))
 
-        cloud_html = '''<!DOCTYPE html>
-        <html><head><style>
-        body { margin:0; padding:0; background:rgba(20,18,15,0.85); border-radius:16px; overflow:hidden; }
-        .cloud-wrap { position:relative; width:100%; height:420px; }
-        .kw { position:absolute; text-decoration:none; white-space:nowrap;
-              transition:opacity 0.15s, transform 0.15s; display:inline-block; }
-        .kw:hover { opacity:0.6 !important; transform:scale(1.1); }
-        </style></head><body>
-        <div class="cloud-wrap">
-        '''
-        for kw, x, y, size, color in positions:
-            news_url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
-            fw = "700" if size > 1.8 else "500"
-            cloud_html += f'<a class="kw" href="{news_url}" target="_blank" style="left:{x}%;top:{y}%;font-size:{size}em;color:{color};font-weight:{fw};" title="관련 뉴스: {kw}">{kw}</a>\n'
-        cloud_html += '</div></body></html>'
-        components.html(cloud_html, height=430)
-        st.caption("☝️ 단어 클릭 시 네이버 관련 뉴스로 이동")
+        # ── HTML 생성 (components.html로 렌더링) ─────────────
+        items_js = []
+        for kw, x, y, spx, color, fw in positions:
+            url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+            items_js.append(
+                f'{{"kw":"{kw}","x":{x},"y":{y},"spx":{spx},"color":"{color}",'
+                f'"fw":"{fw}","url":"{url}"}}'
+            )
+        items_json = "[" + ",".join(items_js) + "]"
+
+        cloud_html = f"""<!DOCTYPE html>
+<html><head><style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:#14120F;border-radius:14px;overflow:hidden;}}
+#wrap{{position:relative;width:{CW}px;height:{CH}px;}}
+.kw{{position:absolute;white-space:nowrap;cursor:pointer;
+     transition:opacity .15s,transform .15s;user-select:none;}}
+.kw:hover{{opacity:.55;transform:scale(1.1);}}
+</style></head><body>
+<div id="wrap"></div>
+<script>
+const items={items_json};
+const wrap=document.getElementById('wrap');
+items.forEach(d=>{{
+  const a=document.createElement('a');
+  a.className='kw';
+  a.textContent=d.kw;
+  a.href=d.url;
+  a.target='_blank';
+  a.rel='noopener noreferrer';
+  a.style.cssText=`left:${{d.x}}px;top:${{d.y}}px;font-size:${{d.spx}}px;`+
+    `color:${{d.color}};font-weight:${{d.fw}};text-decoration:none;`;
+  wrap.appendChild(a);
+}});
+</script></body></html>"""
+
+        components.html(cloud_html, height=CH + 10)
+        st.caption("☝️ 단어 클릭 시 네이버 관련 뉴스 새 탭으로 이동")
 
     with right_col:
         st.markdown("#### 📊 검색 순위")
@@ -611,12 +666,11 @@ def show_realtime_trends(trends):
 
         with st.spinner("검색량 로딩 중..."):
             for idx, kw in enumerate(trends[:15]):
-                rank_icon = medal.get(idx, f"**{idx+1}**")
+                rank_icon = medal.get(idx, str(idx + 1))
                 news_url  = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
                 volume    = get_trend_volume(kw)
                 vol_str   = f"{volume:,}" if volume else "—"
 
-                # 한 행: [순위] [분석버튼] [뉴스링크] [검색량]
                 c_rank, c_btn, c_news, c_vol = st.columns([1, 4, 1, 2])
                 with c_rank:
                     st.markdown(f'<div style="color:#C9A84C;font-weight:700;padding:6px 0;text-align:center;">{rank_icon}</div>', unsafe_allow_html=True)
@@ -628,7 +682,7 @@ def show_realtime_trends(trends):
                         st.session_state.auto_run = True
                         st.rerun()
                 with c_news:
-                    st.markdown(f'<div style="padding:6px 0;text-align:center;"><a href="{news_url}" target="_blank" style="color:#8A8070;text-decoration:none;font-size:1.1em;" title="관련 뉴스">📰</a></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="padding:6px 0;text-align:center;"><a href="{news_url}" target="_blank" rel="noopener" style="color:#8A8070;text-decoration:none;font-size:1.1em;">📰</a></div>', unsafe_allow_html=True)
                 with c_vol:
                     st.markdown(f'<div style="color:#9A7B3C;font-size:0.82em;padding:6px 0;text-align:right;">{vol_str}</div>', unsafe_allow_html=True)
 
