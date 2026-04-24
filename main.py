@@ -579,48 +579,73 @@ def show_realtime_trends(trends):
         st.warning("Google Trends 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
         return
 
-    st.markdown("""
-    <div class="section-card">
-        <div class="section-card-title">REAL-TIME TRENDS</div>
-        <div class="section-card-heading">🔥 실시간 인기 급상승 키워드</div>
-        <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 키워드 클릭 시 네이버 뉴스로 이동합니다</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── 헤더 + 모드 드롭다운 ─────────────────────────────────
+    hdr_col, dd_col = st.columns([5, 1])
+    with hdr_col:
+        st.markdown("""
+        <div class="section-card">
+            <div class="section-card-title">REAL-TIME TRENDS</div>
+            <div class="section-card-heading">🔥 실시간 인기 급상승 키워드</div>
+            <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 키워드 클릭 시 네이버 뉴스로 이동합니다</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with dd_col:
+        st.markdown("<div style='height:52px'></div>", unsafe_allow_html=True)
+        view_mode = st.selectbox("", ["실시간", "월간"], key="rt_view_mode", label_visibility="collapsed")
 
-    # ── 볼륨 선수집 (순위 정렬 + 클라우드 폰트에 공동 사용) ──────
-    with st.spinner("검색량 로딩 중..."):
-        raw_rank = []
-        for kw in trends[:10]:
+    # ── 데이터 수집 (모드 무관하게 항상 볼륨 수집) ───────────
+    with st.spinner("데이터 로딩 중..."):
+        trend_data = []
+        for i, kw in enumerate(trends[:10]):
             vol = get_trend_volume(kw)
             url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
-            raw_rank.append({"kw": kw, "volume": vol, "url": url})
-        # 검색량 내림차순 정렬
-        raw_rank.sort(key=lambda x: x["volume"], reverse=True)
-        vol_map   = {d["kw"]: d["volume"] for d in raw_rank}
-        max_vol   = max((d["volume"] for d in raw_rank), default=1) or 1
+            trend_data.append({"kw": kw, "volume": vol, "url": url, "trend_pos": i})
+
+    vol_map       = {d["kw"]: d["volume"] for d in trend_data}
+    trend_pos_map = {d["kw"]: d["trend_pos"] for d in trend_data}  # Google Trends 순위(0-based)
+
+    # ── 모드별 순위 결정 ─────────────────────────────────────
+    if view_mode == "월간":
+        raw_rank = sorted(trend_data, key=lambda x: x["volume"], reverse=True)
+        max_vol  = max((d["volume"] for d in raw_rank), default=1) or 1
+    else:  # 실시간: Google Trends 원래 순서 유지
+        raw_rank = trend_data
+        max_vol  = max((d["volume"] for d in raw_rank), default=1) or 1
 
     left_col, right_col = st.columns([3, 2])
 
     with left_col:
         st.markdown("#### 🌐 키워드 클라우드")
 
-        COLORS = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
-        cloud_kws = get_trends_for_cloud(30)   # 30개 보장
-        total_kws = max(len(cloud_kws), 1)
+        COLORS    = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
+        cloud_kws_raw = get_trends_for_cloud(30)
 
-        # 검색량 내림차순 정렬 — 1위 키워드가 JS에서 index 0이 되어 가운데 배치됨
-        cloud_kws = sorted(cloud_kws, key=lambda kw: vol_map.get(kw, 0), reverse=True)
+        # ── 모드별 클라우드 정렬 + 폰트 계산 ────────────────
+        if view_mode == "월간":
+            # 월간: 검색량 내림차순 — 1위(검색량 최대)가 index 0 → JS에서 가운데 배치
+            cloud_kws = sorted(cloud_kws_raw, key=lambda kw: vol_map.get(kw, 0), reverse=True)
+        else:
+            # 실시간: Google Trends 순위 기반 — 1위(pos=0)가 index 0 → 가운데 배치
+            cloud_kws = sorted(cloud_kws_raw,
+                               key=lambda kw: trend_pos_map.get(kw, 999))
 
         kw_data = []
         for idx, kw in enumerate(cloud_kws):
-            vol = vol_map.get(kw, 0)
-            if vol > 0:
-                # 선형 스케일: 검색량 비율 그대로 폰트에 반영 (13~46px)
-                ratio   = vol / max_vol          # 0.0 ~ 1.0
-                size_px = int(13 + ratio * 33)   # 1등=46px, 0에 가까울수록 13px
-            else:
-                # 보충 키워드는 작은 고정 크기
-                size_px = max(12, 16 - (idx - len(vol_map)) // 3)
+            if view_mode == "월간":
+                vol = vol_map.get(kw, 0)
+                if vol > 0:
+                    ratio   = vol / max_vol
+                    size_px = int(13 + ratio * 33)   # 1등=46px
+                else:
+                    size_px = max(12, 16 - (idx - len(vol_map)) // 3)
+            else:  # 실시간: Trends 순위 기반 폰트
+                pos = trend_pos_map.get(kw, None)
+                if pos is not None:
+                    # 1위(pos=0)=46px, 10위(pos=9)=~16px
+                    size_px = max(16, int(46 - pos * 3.3))
+                else:
+                    size_px = 13  # 보충 키워드
+
             color   = COLORS[min(idx // 5, len(COLORS) - 1)]
             fw      = "700" if size_px >= 24 else "500"
             url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
@@ -818,11 +843,16 @@ tick();
         st.caption(f"✋ 단어를 드래그하면 주변 글자가 밀려납니다 · 클릭 시 뉴스 이동 · 총 {len(cloud_kws)}개")
 
     with right_col:
-        st.markdown("#### 📊 검색량 순위 (TOP 10)")
+        rank_title = "📊 검색량 순위 (TOP 10)" if view_mode == "월간" else "⚡ 트렌드 순위 (TOP 10)"
+        st.markdown(f"#### {rank_title}")
         medal = {0:"🥇", 1:"🥈", 2:"🥉"}
         rank_rows = []
         for idx, d in enumerate(raw_rank):
-            vol_str = f"{d['volume']:,}" if d['volume'] else "—"
+            if view_mode == "월간":
+                vol_str = f"{d['volume']:,}"
+            else:
+                # 실시간: 볼륨 있으면 참고수치, 없으면 신규 급상승 표시
+                vol_str = f"{d['volume']:,}" if d['volume'] else "🔥 신규"
             icon    = medal.get(idx, str(idx + 1))
             safe_kw = d['kw'].replace('"','&quot;').replace('<','&lt;')
             rank_rows.append(
