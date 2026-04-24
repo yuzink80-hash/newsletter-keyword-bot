@@ -612,13 +612,12 @@ def show_realtime_trends(trends):
         for idx, kw in enumerate(cloud_kws):
             vol = vol_map.get(kw, 0)
             if vol > 0:
-                # 검색량 기반 폰트 (로그 스케일로 극단값 완화): 20~44px
-                import math
-                ratio   = math.log1p(vol) / math.log1p(max_vol)
-                size_px = int(20 + ratio * 24)
+                # 선형 스케일: 검색량 비율 그대로 폰트에 반영 (13~46px)
+                ratio   = vol / max_vol          # 0.0 ~ 1.0
+                size_px = int(13 + ratio * 33)   # 1등=46px, 0에 가까울수록 13px
             else:
-                # 보충 키워드는 위치 기반으로 작게
-                size_px = max(12, 19 - (idx - len(vol_map)) // 2)
+                # 보충 키워드는 작은 고정 크기
+                size_px = max(12, 16 - (idx - len(vol_map)) // 3)
             color   = COLORS[min(idx // 5, len(COLORS) - 1)]
             fw      = "700" if size_px >= 24 else "500"
             url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
