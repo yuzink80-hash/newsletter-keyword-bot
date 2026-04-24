@@ -593,53 +593,52 @@ def show_realtime_trends(trends):
         st.markdown("#### 🌐 키워드 클라우드")
 
         COLORS = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
-        cloud_kws = get_trends_for_cloud(20)   # 항상 20개 보장
+        cloud_kws = get_trends_for_cloud(30)   # 30개 보장
         total_kws = max(len(cloud_kws), 1)
 
         kw_data = []
         for idx, kw in enumerate(cloud_kws):
-            size_px = max(13, int(44 - idx * (44 - 13) / (total_kws - 1))) if total_kws > 1 else 44
-            color   = COLORS[min(idx // 3, len(COLORS) - 1)]
-            fw      = "700" if size_px >= 26 else "500"
+            size_px = max(12, int(44 - idx * (44 - 12) / (total_kws - 1))) if total_kws > 1 else 44
+            color   = COLORS[min(idx // 5, len(COLORS) - 1)]
+            fw      = "700" if size_px >= 24 else "500"
             url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
             safe_kw = kw.replace('\\', '\\\\').replace('"', '\\"')
             kw_data.append(f'{{"kw":"{safe_kw}","spx":{size_px},"color":"{color}","fw":"{fw}","url":"{url}"}}')
 
         kw_json = "[" + ",".join(kw_data) + "]"
 
-        # JS가 실제 DOM 렌더링 후 offsetWidth/Height로 정확히 충돌 감지
         cloud_html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:#14120F;border-radius:14px;overflow:hidden;font-family:'Malgun Gothic',sans-serif;}}
-#wrap{{position:relative;width:100%;height:520px;}}
-.kw{{position:absolute;white-space:nowrap;text-decoration:none;
-     visibility:hidden;transition:opacity .15s,transform .15s;cursor:pointer;}}
-.kw:hover{{opacity:.5 !important;transform:scale(1.1);}}
+body{{background:#14120F;border-radius:14px;overflow:hidden;
+      font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;}}
+#wrap{{position:relative;width:100%;height:540px;overflow:hidden;}}
+.kw{{position:absolute;white-space:nowrap;cursor:grab;user-select:none;
+     visibility:hidden;will-change:left,top;}}
+.kw:active{{cursor:grabbing;}}
 </style></head><body>
 <div id="wrap"></div>
 <script>
-const PAD = 4;
+(function(){{
+const PAD   = 5;
+const REPEL = 130;   // 반발 반경(px)
+const SPRING= 0.035; // 원위치 복귀 강도
+const FRIC  = 0.87;  // 마찰 (1=미끄럽, 0=즉시정지)
+const FORCE = 14;    // 드래그 반발 강도
+
 const items = {kw_json};
 const wrap  = document.getElementById('wrap');
-const W = wrap.clientWidth  || 700;
-const H = wrap.clientHeight || 520;
-const placed = [];   // [x, y, w, h]
+const W = wrap.clientWidth  || 720;
+const H = wrap.clientHeight || 540;
 
-function overlaps(x, y, w, h) {{
-  for (const [px,py,pw,ph] of placed) {{
-    if (!(x+w+PAD<px || x>px+pw+PAD || y+h+PAD<py || y>py+ph+PAD)) return true;
-  }}
-  return false;
-}}
+// ── 1단계: 배치 ──────────────────────────────────────────
+const placed = [];
+const state  = [];
 
 items.forEach(d => {{
-  const el = document.createElement('a');
-  el.className = 'kw';
+  const el = document.createElement('span');
+  el.className   = 'kw';
   el.textContent = d.kw;
-  el.href = d.url;
-  el.target = '_blank';
-  el.rel = 'noopener noreferrer';
   el.style.fontSize   = d.spx + 'px';
   el.style.color      = d.color;
   el.style.fontWeight = d.fw;
@@ -647,37 +646,119 @@ items.forEach(d => {{
 
   const ew = el.offsetWidth  + 4;
   const eh = el.offsetHeight + 2;
+  let ox = 0, oy = 0;
 
-  let placed_ok = false;
-  for (let i = 0; i < 300; i++) {{
-    const x = Math.random() * Math.max(1, W - ew);
-    const y = Math.random() * Math.max(1, H - eh);
-    if (!overlaps(x, y, ew, eh)) {{
-      el.style.left = x + 'px';
-      el.style.top  = y + 'px';
-      el.style.visibility = 'visible';
-      placed.push([x, y, ew, eh]);
-      placed_ok = true;
-      break;
+  for (let i = 0; i < 400; i++) {{
+    const tx = Math.random() * Math.max(1, W - ew);
+    const ty = Math.random() * Math.max(1, H - eh);
+    let ok = true;
+    for (const [bx,by,bw,bh] of placed) {{
+      if (!(tx+ew+PAD<bx||tx>bx+bw+PAD||ty+eh+PAD<by||ty>by+bh+PAD)){{ok=false;break;}}
+    }}
+    if (ok) {{ ox=tx; oy=ty; break; }}
+    if (i===399) {{
+      const sm = Math.max(11, d.spx*0.78);
+      el.style.fontSize = sm+'px';
+      ox = Math.random()*Math.max(1,W-el.offsetWidth-4);
+      oy = Math.random()*Math.max(1,H-el.offsetHeight-2);
     }}
   }}
-  if (!placed_ok) {{
-    // 300회 실패 시 글자 20% 축소 후 강제 배치
-    const sm = Math.max(11, d.spx * 0.75);
-    el.style.fontSize = sm + 'px';
-    const ew2 = el.offsetWidth + 2, eh2 = el.offsetHeight + 2;
-    const x = Math.random() * Math.max(1, W - ew2);
-    const y = Math.random() * Math.max(1, H - eh2);
-    el.style.left = x + 'px';
-    el.style.top  = y + 'px';
-    el.style.visibility = 'visible';
-    placed.push([x, y, ew2, eh2]);
-  }}
+  placed.push([ox, oy, el.offsetWidth, el.offsetHeight]);
+  el.style.left = ox+'px'; el.style.top = oy+'px';
+  el.style.visibility = 'visible';
+
+  state.push({{ el, url:d.url, x:ox, y:oy, ox, oy,
+                vx:0, vy:0, w:el.offsetWidth, h:el.offsetHeight,
+                dragging:false }});
 }});
+
+// ── 2단계: 드래그 + 물리 ─────────────────────────────────
+let drag = null, offX = 0, offY = 0, didDrag = false, sx = 0, sy = 0;
+
+state.forEach(item => {{
+  item.el.addEventListener('mousedown', e => {{
+    drag = item; item.dragging = true;
+    const r = wrap.getBoundingClientRect();
+    offX = e.clientX - r.left - item.x;
+    offY = e.clientY - r.top  - item.y;
+    sx = e.clientX; sy = e.clientY; didDrag = false;
+    item.el.style.zIndex = 999;
+    e.preventDefault();
+  }});
+  item.el.addEventListener('click', e => {{
+    if (!didDrag) window.open(item.url,'_blank','noopener,noreferrer');
+    e.preventDefault();
+  }});
+  // touch
+  item.el.addEventListener('touchstart', e => {{
+    const t = e.touches[0];
+    drag = item; item.dragging = true;
+    const r = wrap.getBoundingClientRect();
+    offX = t.clientX - r.left - item.x;
+    offY = t.clientY - r.top  - item.y;
+    sx = t.clientX; sy = t.clientY; didDrag = false;
+    item.el.style.zIndex = 999;
+  }},{{passive:true}});
+}});
+
+function onMove(cx, cy) {{
+  if (!drag) return;
+  if (Math.hypot(cx-sx, cy-sy) > 5) didDrag = true;
+  const r = wrap.getBoundingClientRect();
+  const mx = cx - r.left, my = cy - r.top;
+  drag.x = Math.max(0, Math.min(W - drag.w, mx - offX));
+  drag.y = Math.max(0, Math.min(H - drag.h, my - offY));
+  drag.el.style.left = drag.x+'px';
+  drag.el.style.top  = drag.y+'px';
+}}
+function onUp() {{
+  if (drag) {{ drag.dragging=false; drag.el.style.zIndex=''; drag=null; }}
+}}
+
+document.addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
+document.addEventListener('mouseup',   onUp);
+document.addEventListener('touchmove', e => {{
+  const t=e.touches[0]; onMove(t.clientX,t.clientY);
+}},{{passive:true}});
+document.addEventListener('touchend', onUp);
+
+// ── 3단계: 애니메이션 루프 ────────────────────────────────
+function tick() {{
+  const dcx = drag ? drag.x + drag.w/2 : -9999;
+  const dcy = drag ? drag.y + drag.h/2 : -9999;
+
+  state.forEach(item => {{
+    if (item.dragging) return;
+    const cx = item.x + item.w/2;
+    const cy = item.y + item.h/2;
+    const dx = cx - dcx, dy = cy - dcy;
+    const dist = Math.hypot(dx, dy) || 1;
+
+    // 반발력
+    if (dist < REPEL) {{
+      const f = ((REPEL-dist)/REPEL) * FORCE;
+      item.vx += (dx/dist)*f;
+      item.vy += (dy/dist)*f;
+    }}
+    // 원위치 복귀 스프링
+    item.vx += (item.ox - item.x) * SPRING;
+    item.vy += (item.oy - item.y) * SPRING;
+    // 마찰
+    item.vx *= FRIC; item.vy *= FRIC;
+    // 위치 업데이트
+    item.x = Math.max(0, Math.min(W-item.w, item.x+item.vx));
+    item.y = Math.max(0, Math.min(H-item.h, item.y+item.vy));
+    item.el.style.left = item.x+'px';
+    item.el.style.top  = item.y+'px';
+  }});
+  requestAnimationFrame(tick);
+}}
+tick();
+}})();
 </script></body></html>"""
 
-        components.html(cloud_html, height=534)
-        st.caption(f"☝️ 단어 클릭 시 네이버 관련 뉴스 새 탭으로 이동 · 총 {len(cloud_kws)}개")
+        components.html(cloud_html, height=554)
+        st.caption(f"✋ 단어를 드래그하면 주변 글자가 밀려납니다 · 클릭 시 뉴스 이동 · 총 {len(cloud_kws)}개")
 
     with right_col:
         st.markdown("#### 📊 검색 순위 (TOP 10)")
