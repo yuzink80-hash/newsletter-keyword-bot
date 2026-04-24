@@ -524,6 +524,56 @@ def draw_donut_chart(data_dict, color_range):
     ).properties(height=250)
     return chart
 
+def show_realtime_trends(trends):
+    """실시간 검색어 시각화 페이지"""
+    if not trends:
+        st.warning("Google Trends 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+        return
+
+    st.markdown("""
+    <div class="section-card">
+        <div class="section-card-title">REAL-TIME TRENDS</div>
+        <div class="section-card-heading">🔥 실시간 인기 급상승 키워드</div>
+        <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 클릭하면 즉시 검색 분석으로 이동합니다</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    left_col, right_col = st.columns([3, 2])
+
+    with left_col:
+        st.markdown("#### 🌐 키워드 클라우드")
+        # 순위별 폰트 크기 계산 (1위 = 2.4em, 25위 = 0.9em)
+        total = len(trends[:25])
+        cloud_html = '<div style="padding:20px; line-height:2.4; word-break:keep-all;">'
+        colors = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
+        for idx, kw in enumerate(trends[:25]):
+            size = round(2.4 - (idx / total) * 1.5, 2)
+            color = colors[min(idx // 4, len(colors) - 1)]
+            cloud_html += f'<span data-kw="{kw}" style="font-size:{size}em; color:{color}; margin:4px 8px; display:inline-block; cursor:pointer;" title="{kw}">{kw}</span> '
+        cloud_html += '</div>'
+        st.markdown(cloud_html, unsafe_allow_html=True)
+
+    with right_col:
+        st.markdown("#### 📊 순위별 키워드")
+        medal = {0: "🥇", 1: "🥈", 2: "🥉"}
+        for idx, kw in enumerate(trends[:15]):
+            icon = medal.get(idx, f"{idx+1}")
+            col_rank, col_btn = st.columns([1, 4])
+            with col_rank:
+                st.markdown(f'<div style="color:#C9A84C; font-weight:700; padding:6px 0; text-align:center;">{icon}</div>', unsafe_allow_html=True)
+            with col_btn:
+                if st.button(kw, key=f"rt_rank_{idx}", use_container_width=True):
+                    st.session_state.analysis_type_widget = "검색 분석"
+                    st.session_state.current_search = kw
+                    st.session_state._pending_search = kw
+                    st.session_state.auto_run = True
+                    st.rerun()
+
+    st.divider()
+    if st.button("🔄 새로고침", key="rt_refresh_btn"):
+        st.cache_data.clear()
+        st.rerun()
+
 # ==========================================
 # 🖥️ 프론트엔드 UI (화면 그리기)
 # ==========================================
@@ -532,7 +582,7 @@ st.markdown('<p class="sub-title">키워드 데이터 분석을 통해 콘텐츠
 
 col1, col2 = st.columns([1, 6])
 with col1:
-    st.selectbox("분석 유형", ["검색 분석", "쇼핑 분석"], label_visibility="collapsed", key="analysis_type_widget")
+    st.selectbox("분석 유형", ["검색 분석", "쇼핑 분석", "실시간 검색어"], label_visibility="collapsed", key="analysis_type_widget")
 with col2:
     def update_search():
         st.session_state.current_search = st.session_state.search_input_widget
@@ -561,6 +611,12 @@ _final_category = (
 )
 
 current_trends = get_google_trends()
+
+# ── 실시간 검색어 탭: 별도 페이지로 분기 ──────────────────────
+if st.session_state.get('analysis_type_widget') == '실시간 검색어':
+    show_realtime_trends(current_trends)
+    st.stop()
+
 if current_trends:
     top20 = current_trends[:20]
     trend_cols = st.columns(len(top20))
