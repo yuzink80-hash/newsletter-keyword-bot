@@ -7,6 +7,7 @@ import base64
 import pandas as pd
 import xml.etree.ElementTree as ET
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 import altair as alt
 
@@ -586,28 +587,22 @@ def show_realtime_trends(trends):
             placed.append((x, y, char_w, char_h))
             positions.append((kw, x, y, size, colors[min(idx // 4, 5)]))
 
-        cloud_html = '''
-        <div style="position:relative; height:420px; background:rgba(20,18,15,0.6);
-                    border-radius:16px; border:1px solid rgba(138,128,112,0.2);
-                    overflow:hidden; margin-bottom:8px;">
+        cloud_html = '''<!DOCTYPE html>
+        <html><head><style>
+        body { margin:0; padding:0; background:rgba(20,18,15,0.85); border-radius:16px; overflow:hidden; }
+        .cloud-wrap { position:relative; width:100%; height:420px; }
+        .kw { position:absolute; text-decoration:none; white-space:nowrap;
+              transition:opacity 0.15s, transform 0.15s; display:inline-block; }
+        .kw:hover { opacity:0.6 !important; transform:scale(1.1); }
+        </style></head><body>
+        <div class="cloud-wrap">
         '''
         for kw, x, y, size, color in positions:
             news_url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
             fw = "700" if size > 1.8 else "500"
-            cloud_html += f'''
-            <a href="{news_url}" target="_blank" style="
-                position:absolute; left:{x}%; top:{y}%;
-                font-size:{size}em; color:{color}; font-weight:{fw};
-                text-decoration:none; white-space:nowrap;
-                transition:opacity 0.15s, transform 0.15s;
-                display:inline-block;
-            "
-            onmouseover="this.style.opacity='0.65';this.style.transform='scale(1.08)'"
-            onmouseout="this.style.opacity='1';this.style.transform='scale(1)'"
-            title="관련 뉴스 보기: {kw}">{kw}</a>
-            '''
-        cloud_html += '</div>'
-        st.markdown(cloud_html, unsafe_allow_html=True)
+            cloud_html += f'<a class="kw" href="{news_url}" target="_blank" style="left:{x}%;top:{y}%;font-size:{size}em;color:{color};font-weight:{fw};" title="관련 뉴스: {kw}">{kw}</a>\n'
+        cloud_html += '</div></body></html>'
+        components.html(cloud_html, height=430)
         st.caption("☝️ 단어 클릭 시 네이버 관련 뉴스로 이동")
 
     with right_col:
