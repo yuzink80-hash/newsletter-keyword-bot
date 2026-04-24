@@ -524,6 +524,21 @@ def draw_donut_chart(data_dict, color_range):
     ).properties(height=250)
     return chart
 
+@st.cache_data(ttl=1800)
+def get_trend_volume(kw):
+    """실시간 트렌드 키워드의 월간검색량을 Naver Ad API로 조회"""
+    try:
+        result = _call_naver_keyword_tool(kw)
+        if not result:
+            return 0
+        # 정확히 일치하는 키워드 우선, 없으면 첫 번째 항목
+        for item in result:
+            if item['keyword'] == kw:
+                return item['volume']
+        return result[0]['volume'] if result else 0
+    except Exception:
+        return 0
+
 def show_realtime_trends(trends):
     """실시간 검색어 시각화 페이지"""
     if not trends:
@@ -534,7 +549,7 @@ def show_realtime_trends(trends):
     <div class="section-card">
         <div class="section-card-title">REAL-TIME TRENDS</div>
         <div class="section-card-heading">🔥 실시간 인기 급상승 키워드</div>
-        <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 클릭하면 즉시 검색 분석으로 이동합니다</div>
+        <div style="color:#8A8070; font-size:0.85em;">Google Trends 기준 · 키워드 클릭 시 검색 분석으로 이동합니다</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -542,32 +557,85 @@ def show_realtime_trends(trends):
 
     with left_col:
         st.markdown("#### 🌐 키워드 클라우드")
-        # 순위별 폰트 크기 계산 (1위 = 2.4em, 25위 = 0.9em)
-        total = len(trends[:25])
-        cloud_html = '<div style="padding:20px; line-height:2.4; word-break:keep-all;">'
+
+        import hashlib
         colors = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
+
+        # 해시 기반으로 안정적인 랜덤 좌표 생성 + 겹침 최소화
+        placed = []
+        positions = []
         for idx, kw in enumerate(trends[:25]):
-            size = round(2.4 - (idx / total) * 1.5, 2)
-            color = colors[min(idx // 4, len(colors) - 1)]
-            cloud_html += f'<span data-kw="{kw}" style="font-size:{size}em; color:{color}; margin:4px 8px; display:inline-block; cursor:pointer;" title="{kw}">{kw}</span> '
+            h = int(hashlib.md5((kw + str(idx)).encode()).hexdigest(), 16)
+            size = round(2.5 - (idx / 25) * 1.6, 2)
+            char_w = size * len(kw) * 14   # 대략적인 픽셀 너비
+            char_h = size * 20
+
+            # 겹침 피하기: 최대 20회 시도
+            for attempt in range(20):
+                seed = h + attempt * 7919
+                x = (seed % 68) + 2          # 2~70%
+                y = ((seed >> 10) % 72) + 4  # 4~76%
+                # 이미 배치된 항목과 충돌 검사
+                overlap = False
+                for px, py, pw, ph in placed:
+                    if abs(x - px) < (pw / 8 + char_w / 8) and abs(y - py) < (ph / 4 + char_h / 4):
+                        overlap = True
+                        break
+                if not overlap:
+                    break
+            placed.append((x, y, char_w, char_h))
+            positions.append((kw, x, y, size, colors[min(idx // 4, 5)]))
+
+        cloud_html = '''
+        <div style="position:relative; height:420px; background:rgba(20,18,15,0.6);
+                    border-radius:16px; border:1px solid rgba(138,128,112,0.2);
+                    overflow:hidden; margin-bottom:8px;">
+        '''
+        for kw, x, y, size, color in positions:
+            news_url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+            fw = "700" if size > 1.8 else "500"
+            cloud_html += f'''
+            <a href="{news_url}" target="_blank" style="
+                position:absolute; left:{x}%; top:{y}%;
+                font-size:{size}em; color:{color}; font-weight:{fw};
+                text-decoration:none; white-space:nowrap;
+                transition:opacity 0.15s, transform 0.15s;
+                display:inline-block;
+            "
+            onmouseover="this.style.opacity='0.65';this.style.transform='scale(1.08)'"
+            onmouseout="this.style.opacity='1';this.style.transform='scale(1)'"
+            title="관련 뉴스 보기: {kw}">{kw}</a>
+            '''
         cloud_html += '</div>'
         st.markdown(cloud_html, unsafe_allow_html=True)
+        st.caption("☝️ 단어 클릭 시 네이버 관련 뉴스로 이동")
 
     with right_col:
-        st.markdown("#### 📊 순위별 키워드")
+        st.markdown("#### 📊 검색 순위")
         medal = {0: "🥇", 1: "🥈", 2: "🥉"}
-        for idx, kw in enumerate(trends[:15]):
-            icon = medal.get(idx, f"{idx+1}")
-            col_rank, col_btn = st.columns([1, 4])
-            with col_rank:
-                st.markdown(f'<div style="color:#C9A84C; font-weight:700; padding:6px 0; text-align:center;">{icon}</div>', unsafe_allow_html=True)
-            with col_btn:
-                if st.button(kw, key=f"rt_rank_{idx}", use_container_width=True):
-                    st.session_state.analysis_type_widget = "검색 분석"
-                    st.session_state.current_search = kw
-                    st.session_state._pending_search = kw
-                    st.session_state.auto_run = True
-                    st.rerun()
+
+        with st.spinner("검색량 로딩 중..."):
+            for idx, kw in enumerate(trends[:15]):
+                rank_icon = medal.get(idx, f"**{idx+1}**")
+                news_url  = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+                volume    = get_trend_volume(kw)
+                vol_str   = f"{volume:,}" if volume else "—"
+
+                # 한 행: [순위] [분석버튼] [뉴스링크] [검색량]
+                c_rank, c_btn, c_news, c_vol = st.columns([1, 4, 1, 2])
+                with c_rank:
+                    st.markdown(f'<div style="color:#C9A84C;font-weight:700;padding:6px 0;text-align:center;">{rank_icon}</div>', unsafe_allow_html=True)
+                with c_btn:
+                    if st.button(kw, key=f"rt_rank_{idx}", use_container_width=True):
+                        st.session_state.analysis_type_widget = "검색 분석"
+                        st.session_state.current_search = kw
+                        st.session_state._pending_search = kw
+                        st.session_state.auto_run = True
+                        st.rerun()
+                with c_news:
+                    st.markdown(f'<div style="padding:6px 0;text-align:center;"><a href="{news_url}" target="_blank" style="color:#8A8070;text-decoration:none;font-size:1.1em;" title="관련 뉴스">📰</a></div>', unsafe_allow_html=True)
+                with c_vol:
+                    st.markdown(f'<div style="color:#9A7B3C;font-size:0.82em;padding:6px 0;text-align:right;">{vol_str}</div>', unsafe_allow_html=True)
 
     st.divider()
     if st.button("🔄 새로고침", key="rt_refresh_btn"):
