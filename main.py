@@ -247,6 +247,24 @@ def get_google_trends():
         return [normalize_korean(item.find('title').text) for item in root.findall('.//item')]
     except: return []
 
+@st.cache_data(ttl=600)
+def get_trends_for_cloud(target=20):
+    """Google Trends + Naver 자동완성으로 target개 보장"""
+    base = get_google_trends()
+    result = list(base)
+    seen  = set(result)
+    # 부족하면 상위 트렌드의 자동완성으로 보충
+    for kw in base[:5]:
+        if len(result) >= target:
+            break
+        for ac in get_naver_autocomplete(kw):
+            if ac not in seen:
+                result.append(ac)
+                seen.add(ac)
+            if len(result) >= target:
+                break
+    return result[:target]
+
 def get_datalab_trend(keyword):
     url = "https://openapi.naver.com/v1/datalab/search"
     headers = {"X-Naver-Client-Id": OPEN_CLIENT_ID, "X-Naver-Client-Secret": OPEN_CLIENT_SECRET, "Content-Type": "application/json"}
@@ -575,7 +593,7 @@ def show_realtime_trends(trends):
         st.markdown("#### 🌐 키워드 클라우드")
 
         COLORS = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
-        cloud_kws = trends[:20]   # 클라우드에 20개
+        cloud_kws = get_trends_for_cloud(20)   # 항상 20개 보장
         total_kws = max(len(cloud_kws), 1)
 
         kw_data = []
