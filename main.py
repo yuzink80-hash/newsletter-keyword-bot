@@ -763,30 +763,51 @@ function tick() {{
   const dcx = drag ? drag.x + drag.w/2 : -9999;
   const dcy = drag ? drag.y + drag.h/2 : -9999;
 
+  // ① 드래그 반발 + 원위치 스프링
   state.forEach(item => {{
     if (item.dragging) return;
-    const cx = item.x + item.w/2;
-    const cy = item.y + item.h/2;
-    const dx = cx - dcx, dy = cy - dcy;
+    const dx = (item.x + item.w/2) - dcx;
+    const dy = (item.y + item.h/2) - dcy;
     const dist = Math.hypot(dx, dy) || 1;
-
-    // 반발력
     if (dist < REPEL) {{
-      const f = ((REPEL-dist)/REPEL) * FORCE;
+      const f = ((REPEL - dist) / REPEL) * FORCE;
       item.vx += (dx/dist)*f;
       item.vy += (dy/dist)*f;
     }}
-    // 원위치 복귀 스프링
     item.vx += (item.ox - item.x) * SPRING;
     item.vy += (item.oy - item.y) * SPRING;
-    // 마찰
-    item.vx *= FRIC; item.vy *= FRIC;
-    // 위치 업데이트
-    item.x = Math.max(0, Math.min(W-item.w, item.x+item.vx));
-    item.y = Math.max(0, Math.min(H-item.h, item.y+item.vy));
-    item.el.style.left = item.x+'px';
-    item.el.style.top  = item.y+'px';
   }});
+
+  // ② 아이템 간 박스 겹침 해소 (드롭 후 포함, O(n²) — 30개라 문제없음)
+  for (let i = 0; i < state.length - 1; i++) {{
+    for (let j = i + 1; j < state.length; j++) {{
+      const a = state[i], b = state[j];
+      if (a.dragging || b.dragging) continue;
+      const acx = a.x + a.w/2, acy = a.y + a.h/2;
+      const bcx = b.x + b.w/2, bcy = b.y + b.h/2;
+      const ov_x = (a.w + b.w)/2 + PAD - Math.abs(acx - bcx);
+      const ov_y = (a.h + b.h)/2 + PAD - Math.abs(acy - bcy);
+      if (ov_x > 0 && ov_y > 0) {{
+        const ddx = acx - bcx || 0.01;
+        const ddy = acy - bcy || 0.01;
+        const dl  = Math.hypot(ddx, ddy) || 1;
+        const f   = Math.min(ov_x, ov_y) * 0.4;
+        a.vx += (ddx/dl)*f;  a.vy += (ddy/dl)*f;
+        b.vx -= (ddx/dl)*f;  b.vy -= (ddy/dl)*f;
+      }}
+    }}
+  }}
+
+  // ③ 마찰 + 위치 업데이트
+  state.forEach(item => {{
+    if (item.dragging) return;
+    item.vx *= FRIC; item.vy *= FRIC;
+    item.x = Math.max(0, Math.min(W - item.w, item.x + item.vx));
+    item.y = Math.max(0, Math.min(H - item.h, item.y + item.vy));
+    item.el.style.left = item.x + 'px';
+    item.el.style.top  = item.y + 'px';
+  }});
+
   requestAnimationFrame(tick);
 }}
 tick();
