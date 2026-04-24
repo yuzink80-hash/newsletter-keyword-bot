@@ -574,33 +574,32 @@ def show_realtime_trends(trends):
     with left_col:
         st.markdown("#### 🌐 키워드 클라우드")
 
-        # ── 픽셀 기반 겹침 방지 배치 알고리즘 ──────────────────
-        CW, CH = 640, 460          # 컨테이너 크기(px)
-        PAD    = 6                 # 단어 사이 최소 여백
+        import random as _rnd
+        CW, CH = 720, 520
+        PAD    = 3
         COLORS = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
-        cloud_kws = trends[:30]    # 최대 30개
+        cloud_kws = trends[:25]
         total_kws = len(cloud_kws)
 
-        placed    = []   # (x, y, w, h) in px
-        positions = []   # (kw, x_px, y_px, size_px, color)
+        # 안정적인 재현을 위해 키워드 목록 기반 시드 고정
+        seed_val = sum(ord(c) for kw in cloud_kws for c in kw)
+        rng = _rnd.Random(seed_val)
+
+        placed    = []
+        positions = []
 
         for idx, kw in enumerate(cloud_kws):
-            size_px  = max(13, int(44 - idx * (44 - 13) / total_kws))
-            # 한글 글자 너비 ≈ size_px * 1.05, 영문 ≈ size_px * 0.6
-            char_w   = size_px * (1.05 if any('\uAC00' <= c <= '\uD7A3' for c in kw) else 0.62)
-            word_w   = int(len(kw) * char_w) + 8
-            word_h   = int(size_px * 1.35)
-            color    = COLORS[min(idx // 5, len(COLORS) - 1)]
-            fw       = "700" if size_px >= 26 else "500"
+            size_px = max(12, int(42 - idx * (42 - 12) / max(total_kws - 1, 1)))
+            is_kor  = any('\uAC00' <= c <= '\uD7A3' for c in kw)
+            word_w  = int(len(kw) * size_px * (1.0 if is_kor else 0.6)) + 10
+            word_h  = int(size_px * 1.4)
+            color   = COLORS[min(idx // 4, len(COLORS) - 1)]
+            fw      = "700" if size_px >= 24 else "500"
 
-            # 해시 기반 시드로 시도 위치 생성 (재현 가능한 랜덤)
-            h        = int(hashlib.md5((kw + str(idx)).encode()).hexdigest(), 16)
             placed_ok = False
-            for attempt in range(60):
-                seed  = (h + attempt * 48271) & 0xFFFFFFFF
-                x     = seed % max(1, CW - word_w)
-                y     = (seed >> 12) % max(1, CH - word_h)
-                # 겹침 검사 (PAD 여백 포함)
+            for _ in range(200):
+                x = rng.randint(4, max(5, CW - word_w - 4))
+                y = rng.randint(4, max(5, CH - word_h - 4))
                 overlap = any(
                     not (x + word_w + PAD < px or x > px + pw + PAD or
                          y + word_h + PAD < py or y > py + ph + PAD)
@@ -611,34 +610,35 @@ def show_realtime_trends(trends):
                     positions.append((kw, x, y, size_px, color, fw))
                     placed_ok = True
                     break
-            if not placed_ok:
-                # 60회 실패 시 작은 글자로 강제 배치
-                size_sm = max(11, size_px - 8)
-                word_w2 = int(len(kw) * size_sm * 0.95) + 4
-                word_h2 = int(size_sm * 1.35)
-                x = (h * 13 % max(1, CW - word_w2))
-                y = (h * 7  % max(1, CH - word_h2))
-                placed.append((x, y, word_w2, word_h2))
-                positions.append((kw, x, y, size_sm, COLORS[-1], "400"))
 
-        # ── HTML 생성 (components.html로 렌더링) ─────────────
+            if not placed_ok:
+                # 배치 실패 시 글자 크기 줄여서 강제 삽입
+                sm = max(11, size_px - 6)
+                ww = int(len(kw) * sm * (1.0 if is_kor else 0.6)) + 6
+                wh = int(sm * 1.4)
+                x  = rng.randint(4, max(5, CW - ww - 4))
+                y  = rng.randint(4, max(5, CH - wh - 4))
+                placed.append((x, y, ww, wh))
+                positions.append((kw, x, y, sm, COLORS[-1], "400"))
+
         items_js = []
         for kw, x, y, spx, color, fw in positions:
             url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+            safe_kw = kw.replace('"', '\\"')
             items_js.append(
-                f'{{"kw":"{kw}","x":{x},"y":{y},"spx":{spx},"color":"{color}",'
-                f'"fw":"{fw}","url":"{url}"}}'
+                f'{{"kw":"{safe_kw}","x":{x},"y":{y},"spx":{spx},'
+                f'"color":"{color}","fw":"{fw}","url":"{url}"}}'
             )
         items_json = "[" + ",".join(items_js) + "]"
 
         cloud_html = f"""<!DOCTYPE html>
-<html><head><style>
+<html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:#14120F;border-radius:14px;overflow:hidden;}}
+body{{background:#14120F;border-radius:14px;overflow:hidden;font-family:sans-serif;}}
 #wrap{{position:relative;width:{CW}px;height:{CH}px;}}
-.kw{{position:absolute;white-space:nowrap;cursor:pointer;
-     transition:opacity .15s,transform .15s;user-select:none;}}
-.kw:hover{{opacity:.55;transform:scale(1.1);}}
+.kw{{position:absolute;white-space:nowrap;text-decoration:none;
+     transition:opacity .15s,transform .15s;cursor:pointer;}}
+.kw:hover{{opacity:.5;transform:scale(1.12);}}
 </style></head><body>
 <div id="wrap"></div>
 <script>
@@ -646,45 +646,49 @@ const items={items_json};
 const wrap=document.getElementById('wrap');
 items.forEach(d=>{{
   const a=document.createElement('a');
-  a.className='kw';
-  a.textContent=d.kw;
-  a.href=d.url;
-  a.target='_blank';
-  a.rel='noopener noreferrer';
-  a.style.cssText=`left:${{d.x}}px;top:${{d.y}}px;font-size:${{d.spx}}px;`+
-    `color:${{d.color}};font-weight:${{d.fw}};text-decoration:none;`;
+  a.className='kw'; a.textContent=d.kw;
+  a.href=d.url; a.target='_blank'; a.rel='noopener noreferrer';
+  a.style.cssText='left:'+d.x+'px;top:'+d.y+'px;font-size:'+d.spx+'px;'
+    +'color:'+d.color+';font-weight:'+d.fw+';';
   wrap.appendChild(a);
 }});
 </script></body></html>"""
 
-        components.html(cloud_html, height=CH + 10)
-        st.caption("☝️ 단어 클릭 시 네이버 관련 뉴스 새 탭으로 이동")
+        components.html(cloud_html, height=CH + 12)
+        st.caption(f"☝️ 단어 클릭 시 네이버 관련 뉴스 새 탭으로 이동 · 총 {len(positions)}개")
 
     with right_col:
-        st.markdown("#### 📊 검색 순위")
-        medal = {0: "🥇", 1: "🥈", 2: "🥉"}
-
+        st.markdown("#### 📊 검색 순위 (TOP 10)")
         with st.spinner("검색량 로딩 중..."):
-            for idx, kw in enumerate(trends[:15]):
-                rank_icon = medal.get(idx, str(idx + 1))
-                news_url  = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
-                volume    = get_trend_volume(kw)
-                vol_str   = f"{volume:,}" if volume else "—"
-
-                c_rank, c_btn, c_news, c_vol = st.columns([1, 4, 1, 2])
-                with c_rank:
-                    st.markdown(f'<div style="color:#C9A84C;font-weight:700;padding:6px 0;text-align:center;">{rank_icon}</div>', unsafe_allow_html=True)
-                with c_btn:
-                    if st.button(kw, key=f"rt_rank_{idx}", use_container_width=True):
-                        st.session_state.analysis_type_widget = "검색 분석"
-                        st.session_state.current_search = kw
-                        st.session_state._pending_search = kw
-                        st.session_state.auto_run = True
-                        st.rerun()
-                with c_news:
-                    st.markdown(f'<div style="padding:6px 0;text-align:center;"><a href="{news_url}" target="_blank" rel="noopener" style="color:#8A8070;text-decoration:none;font-size:1.1em;">📰</a></div>', unsafe_allow_html=True)
-                with c_vol:
-                    st.markdown(f'<div style="color:#9A7B3C;font-size:0.82em;padding:6px 0;text-align:right;">{vol_str}</div>', unsafe_allow_html=True)
+            rank_rows = []
+            medal = {0:"🥇",1:"🥈",2:"🥉"}
+            for idx, kw in enumerate(trends[:10]):
+                volume  = get_trend_volume(kw)
+                vol_str = f"{volume:,}" if volume else "—"
+                url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+                icon    = medal.get(idx, str(idx+1))
+                safe_kw = kw.replace('"','&quot;').replace('<','&lt;')
+                rank_rows.append(
+                    f'<tr>'
+                    f'<td style="color:#C9A84C;font-weight:700;text-align:center;width:32px;">{icon}</td>'
+                    f'<td><a href="{url}" target="_blank" rel="noopener" '
+                    f'style="color:#F4EFE4;text-decoration:none;font-size:0.95em;">{safe_kw}</a></td>'
+                    f'<td style="text-align:center;width:28px;">'
+                    f'<a href="{url}" target="_blank" rel="noopener" style="text-decoration:none;">📰</a></td>'
+                    f'<td style="color:#9A7B3C;font-size:0.82em;text-align:right;white-space:nowrap;">{vol_str}</td>'
+                    f'</tr>'
+                )
+            rank_html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body{{margin:0;padding:0;background:transparent;font-family:sans-serif;color:#F4EFE4;}}
+table{{width:100%;border-collapse:collapse;}}
+tr{{border-bottom:1px solid rgba(138,128,112,0.15);}}
+td{{padding:8px 4px;vertical-align:middle;}}
+a:hover{{opacity:0.7;}}
+</style></head><body>
+<table>{''.join(rank_rows)}</table>
+</body></html>"""
+            components.html(rank_html, height=10 * 44)
 
     st.divider()
     if st.button("🔄 새로고침", key="rt_refresh_btn"):
