@@ -574,88 +574,92 @@ def show_realtime_trends(trends):
     with left_col:
         st.markdown("#### 🌐 키워드 클라우드")
 
-        import random as _rnd
-        CW, CH = 720, 520
-        PAD    = 3
         COLORS = ["#C9A84C", "#D4B86A", "#E8D5A3", "#F4EFE4", "#C8BFB0", "#8A8070"]
-        cloud_kws = trends[:25]
-        total_kws = len(cloud_kws)
+        cloud_kws = trends[:20]   # 클라우드에 20개
+        total_kws = max(len(cloud_kws), 1)
 
-        # 안정적인 재현을 위해 키워드 목록 기반 시드 고정
-        seed_val = sum(ord(c) for kw in cloud_kws for c in kw)
-        rng = _rnd.Random(seed_val)
-
-        placed    = []
-        positions = []
-
+        kw_data = []
         for idx, kw in enumerate(cloud_kws):
-            size_px = max(12, int(42 - idx * (42 - 12) / max(total_kws - 1, 1)))
-            is_kor  = any('\uAC00' <= c <= '\uD7A3' for c in kw)
-            word_w  = int(len(kw) * size_px * (1.0 if is_kor else 0.6)) + 10
-            word_h  = int(size_px * 1.4)
-            color   = COLORS[min(idx // 4, len(COLORS) - 1)]
-            fw      = "700" if size_px >= 24 else "500"
+            size_px = max(13, int(44 - idx * (44 - 13) / (total_kws - 1))) if total_kws > 1 else 44
+            color   = COLORS[min(idx // 3, len(COLORS) - 1)]
+            fw      = "700" if size_px >= 26 else "500"
+            url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+            safe_kw = kw.replace('\\', '\\\\').replace('"', '\\"')
+            kw_data.append(f'{{"kw":"{safe_kw}","spx":{size_px},"color":"{color}","fw":"{fw}","url":"{url}"}}')
 
-            placed_ok = False
-            for _ in range(200):
-                x = rng.randint(4, max(5, CW - word_w - 4))
-                y = rng.randint(4, max(5, CH - word_h - 4))
-                overlap = any(
-                    not (x + word_w + PAD < px or x > px + pw + PAD or
-                         y + word_h + PAD < py or y > py + ph + PAD)
-                    for px, py, pw, ph in placed
-                )
-                if not overlap:
-                    placed.append((x, y, word_w, word_h))
-                    positions.append((kw, x, y, size_px, color, fw))
-                    placed_ok = True
-                    break
+        kw_json = "[" + ",".join(kw_data) + "]"
 
-            if not placed_ok:
-                # 배치 실패 시 글자 크기 줄여서 강제 삽입
-                sm = max(11, size_px - 6)
-                ww = int(len(kw) * sm * (1.0 if is_kor else 0.6)) + 6
-                wh = int(sm * 1.4)
-                x  = rng.randint(4, max(5, CW - ww - 4))
-                y  = rng.randint(4, max(5, CH - wh - 4))
-                placed.append((x, y, ww, wh))
-                positions.append((kw, x, y, sm, COLORS[-1], "400"))
-
-        items_js = []
-        for kw, x, y, spx, color, fw in positions:
-            url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
-            safe_kw = kw.replace('"', '\\"')
-            items_js.append(
-                f'{{"kw":"{safe_kw}","x":{x},"y":{y},"spx":{spx},'
-                f'"color":"{color}","fw":"{fw}","url":"{url}"}}'
-            )
-        items_json = "[" + ",".join(items_js) + "]"
-
+        # JS가 실제 DOM 렌더링 후 offsetWidth/Height로 정확히 충돌 감지
         cloud_html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:#14120F;border-radius:14px;overflow:hidden;font-family:sans-serif;}}
-#wrap{{position:relative;width:{CW}px;height:{CH}px;}}
+body{{background:#14120F;border-radius:14px;overflow:hidden;font-family:'Malgun Gothic',sans-serif;}}
+#wrap{{position:relative;width:100%;height:520px;}}
 .kw{{position:absolute;white-space:nowrap;text-decoration:none;
-     transition:opacity .15s,transform .15s;cursor:pointer;}}
-.kw:hover{{opacity:.5;transform:scale(1.12);}}
+     visibility:hidden;transition:opacity .15s,transform .15s;cursor:pointer;}}
+.kw:hover{{opacity:.5 !important;transform:scale(1.1);}}
 </style></head><body>
 <div id="wrap"></div>
 <script>
-const items={items_json};
-const wrap=document.getElementById('wrap');
-items.forEach(d=>{{
-  const a=document.createElement('a');
-  a.className='kw'; a.textContent=d.kw;
-  a.href=d.url; a.target='_blank'; a.rel='noopener noreferrer';
-  a.style.cssText='left:'+d.x+'px;top:'+d.y+'px;font-size:'+d.spx+'px;'
-    +'color:'+d.color+';font-weight:'+d.fw+';';
-  wrap.appendChild(a);
+const PAD = 4;
+const items = {kw_json};
+const wrap  = document.getElementById('wrap');
+const W = wrap.clientWidth  || 700;
+const H = wrap.clientHeight || 520;
+const placed = [];   // [x, y, w, h]
+
+function overlaps(x, y, w, h) {{
+  for (const [px,py,pw,ph] of placed) {{
+    if (!(x+w+PAD<px || x>px+pw+PAD || y+h+PAD<py || y>py+ph+PAD)) return true;
+  }}
+  return false;
+}}
+
+items.forEach(d => {{
+  const el = document.createElement('a');
+  el.className = 'kw';
+  el.textContent = d.kw;
+  el.href = d.url;
+  el.target = '_blank';
+  el.rel = 'noopener noreferrer';
+  el.style.fontSize   = d.spx + 'px';
+  el.style.color      = d.color;
+  el.style.fontWeight = d.fw;
+  wrap.appendChild(el);
+
+  const ew = el.offsetWidth  + 4;
+  const eh = el.offsetHeight + 2;
+
+  let placed_ok = false;
+  for (let i = 0; i < 300; i++) {{
+    const x = Math.random() * Math.max(1, W - ew);
+    const y = Math.random() * Math.max(1, H - eh);
+    if (!overlaps(x, y, ew, eh)) {{
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+      el.style.visibility = 'visible';
+      placed.push([x, y, ew, eh]);
+      placed_ok = true;
+      break;
+    }}
+  }}
+  if (!placed_ok) {{
+    // 300회 실패 시 글자 20% 축소 후 강제 배치
+    const sm = Math.max(11, d.spx * 0.75);
+    el.style.fontSize = sm + 'px';
+    const ew2 = el.offsetWidth + 2, eh2 = el.offsetHeight + 2;
+    const x = Math.random() * Math.max(1, W - ew2);
+    const y = Math.random() * Math.max(1, H - eh2);
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+    el.style.visibility = 'visible';
+    placed.push([x, y, ew2, eh2]);
+  }}
 }});
 </script></body></html>"""
 
-        components.html(cloud_html, height=CH + 12)
-        st.caption(f"☝️ 단어 클릭 시 네이버 관련 뉴스 새 탭으로 이동 · 총 {len(positions)}개")
+        components.html(cloud_html, height=534)
+        st.caption(f"☝️ 단어 클릭 시 네이버 관련 뉴스 새 탭으로 이동 · 총 {len(cloud_kws)}개")
 
     with right_col:
         st.markdown("#### 📊 검색 순위 (TOP 10)")
