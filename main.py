@@ -587,6 +587,18 @@ def show_realtime_trends(trends):
     </div>
     """, unsafe_allow_html=True)
 
+    # ── 볼륨 선수집 (순위 정렬 + 클라우드 폰트에 공동 사용) ──────
+    with st.spinner("검색량 로딩 중..."):
+        raw_rank = []
+        for kw in trends[:10]:
+            vol = get_trend_volume(kw)
+            url = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
+            raw_rank.append({"kw": kw, "volume": vol, "url": url})
+        # 검색량 내림차순 정렬
+        raw_rank.sort(key=lambda x: x["volume"], reverse=True)
+        vol_map   = {d["kw"]: d["volume"] for d in raw_rank}
+        max_vol   = max((d["volume"] for d in raw_rank), default=1) or 1
+
     left_col, right_col = st.columns([3, 2])
 
     with left_col:
@@ -598,7 +610,15 @@ def show_realtime_trends(trends):
 
         kw_data = []
         for idx, kw in enumerate(cloud_kws):
-            size_px = max(12, int(44 - idx * (44 - 12) / (total_kws - 1))) if total_kws > 1 else 44
+            vol = vol_map.get(kw, 0)
+            if vol > 0:
+                # 검색량 기반 폰트 (로그 스케일로 극단값 완화): 20~44px
+                import math
+                ratio   = math.log1p(vol) / math.log1p(max_vol)
+                size_px = int(20 + ratio * 24)
+            else:
+                # 보충 키워드는 위치 기반으로 작게
+                size_px = max(12, 19 - (idx - len(vol_map)) // 2)
             color   = COLORS[min(idx // 5, len(COLORS) - 1)]
             fw      = "700" if size_px >= 24 else "500"
             url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
@@ -761,27 +781,24 @@ tick();
         st.caption(f"✋ 단어를 드래그하면 주변 글자가 밀려납니다 · 클릭 시 뉴스 이동 · 총 {len(cloud_kws)}개")
 
     with right_col:
-        st.markdown("#### 📊 검색 순위 (TOP 10)")
-        with st.spinner("검색량 로딩 중..."):
-            rank_rows = []
-            medal = {0:"🥇",1:"🥈",2:"🥉"}
-            for idx, kw in enumerate(trends[:10]):
-                volume  = get_trend_volume(kw)
-                vol_str = f"{volume:,}" if volume else "—"
-                url     = f"https://search.naver.com/search.naver?where=news&query={requests.utils.quote(kw)}"
-                icon    = medal.get(idx, str(idx+1))
-                safe_kw = kw.replace('"','&quot;').replace('<','&lt;')
-                rank_rows.append(
-                    f'<tr>'
-                    f'<td style="color:#C9A84C;font-weight:700;text-align:center;width:32px;">{icon}</td>'
-                    f'<td><a href="{url}" target="_blank" rel="noopener" '
-                    f'style="color:#F4EFE4;text-decoration:none;font-size:0.95em;">{safe_kw}</a></td>'
-                    f'<td style="text-align:center;width:28px;">'
-                    f'<a href="{url}" target="_blank" rel="noopener" style="text-decoration:none;">📰</a></td>'
-                    f'<td style="color:#9A7B3C;font-size:0.82em;text-align:right;white-space:nowrap;">{vol_str}</td>'
-                    f'</tr>'
-                )
-            rank_html = f"""<!DOCTYPE html>
+        st.markdown("#### 📊 검색량 순위 (TOP 10)")
+        medal = {0:"🥇", 1:"🥈", 2:"🥉"}
+        rank_rows = []
+        for idx, d in enumerate(raw_rank):
+            vol_str = f"{d['volume']:,}" if d['volume'] else "—"
+            icon    = medal.get(idx, str(idx + 1))
+            safe_kw = d['kw'].replace('"','&quot;').replace('<','&lt;')
+            rank_rows.append(
+                f'<tr>'
+                f'<td style="color:#C9A84C;font-weight:700;text-align:center;width:32px;">{icon}</td>'
+                f'<td><a href="{d["url"]}" target="_blank" rel="noopener" '
+                f'style="color:#F4EFE4;text-decoration:none;font-size:0.95em;">{safe_kw}</a></td>'
+                f'<td style="text-align:center;width:28px;">'
+                f'<a href="{d["url"]}" target="_blank" rel="noopener" style="text-decoration:none;">📰</a></td>'
+                f'<td style="color:#9A7B3C;font-size:0.82em;text-align:right;white-space:nowrap;">{vol_str}</td>'
+                f'</tr>'
+            )
+        rank_html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 body{{margin:0;padding:0;background:transparent;font-family:sans-serif;color:#F4EFE4;}}
 table{{width:100%;border-collapse:collapse;}}
@@ -791,7 +808,7 @@ a:hover{{opacity:0.7;}}
 </style></head><body>
 <table>{''.join(rank_rows)}</table>
 </body></html>"""
-            components.html(rank_html, height=10 * 44)
+        components.html(rank_html, height=10 * 44)
 
     st.divider()
     if st.button("🔄 새로고침", key="rt_refresh_btn"):
