@@ -226,6 +226,16 @@ except KeyError:
 OPEN_CLIENT_ID = "P5roEfkWrGN1EJ85ifkh"
 OPEN_CLIENT_SECRET = "GFGZuG1x12"
 
+# Google Sheets 연동 가능 여부 (시크릿 누락 시 저장 버튼만 숨김, 앱은 정상 동작)
+try:
+    GSHEET_ENABLED = (
+        GSPREAD_OK
+        and "gcp_service_account" in st.secrets
+        and bool(st.secrets.get("GSHEET_URL", ""))
+    )
+except Exception:
+    GSHEET_ENABLED = False
+
 def normalize_korean(text: str) -> str:
     """
     Google Trends RSS가 '미국 의 해군 장관' 처럼 조사를 단어로 분리하는 문제 수정.
@@ -1314,11 +1324,14 @@ if st.session_state.last_df_sorted is not None:
         n_rel = len(st.session_state.last_df_sorted)
         st.caption(f"카테고리: **{st.session_state.last_category}** · 키워드: **{st.session_state.last_target_kw}** · 연관 {n_rel}개")
     with save_col2:
-        if st.button("💾 구글 시트에 저장", key="save_archive_btn", use_container_width=True):
-            ok = save_to_archive(
-                st.session_state.last_target_kw,
-                st.session_state.last_category,
-                st.session_state.last_df_sorted
-            )
-            if ok:
-                st.success(f"✅ '{st.session_state.last_target_kw}' 저장 완료!")
+        if GSHEET_ENABLED:
+            if st.button("💾 구글 시트에 저장", key="save_archive_btn", use_container_width=True):
+                ok = save_to_archive(
+                    st.session_state.last_target_kw,
+                    st.session_state.last_category,
+                    st.session_state.last_df_sorted
+                )
+                if ok:
+                    st.success(f"✅ '{st.session_state.last_target_kw}' 저장 완료!")
+        else:
+            st.caption("💾 구글 시트 미연동")
